@@ -1,0 +1,6 @@
+option(
+    'tests', type: 'feature', description: 'Build tests.'
+)
+option(
+    'yocto_dep', type: 'feature',  description: 'Use yocto dependencies'
+)

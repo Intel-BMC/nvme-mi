@@ -1,0 +1,11 @@
+[Unit]
+Description=NVMe Management Interface Daemon
+
+[Service]
+ExecStart=/usr/bin/nvme-mi
+Type=dbus
+BusName=xyz.openbmc_project.nvme_mi
+SyslogIdentifier=nvme-mi
+
+[Install]
+WantedBy=multi-user.target

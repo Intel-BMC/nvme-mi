@@ -1,0 +1,4 @@
+[wrap-git]
+url = https://github.com/openbmc/phosphor-logging.git
+revision = 25d986c1e7d749d3f78da5a5e507d1f2bcbc7874
+patch_directory=phosphor_log_patch

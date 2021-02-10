@@ -15,13 +15,36 @@
 */
 
 #include <boost/asio.hpp>
+#include <phosphor-logging/log.hpp>
+#include <sdbusplus/asio/connection.hpp>
+#include <sdbusplus/asio/object_server.hpp>
+
+static constexpr const char* serviceName = "xyz.openbmc_project.nvme_mi";
 
 int main()
 {
     boost::asio::io_context io;
+
     boost::asio::signal_set signals(io, SIGINT, SIGTERM);
     signals.async_wait(
         [&io](const boost::system::error_code&, const int&) { io.stop(); });
+
+    std::shared_ptr<sdbusplus::asio::connection> dbusConnection{};
+    std::shared_ptr<sdbusplus::asio::object_server> objectServer{};
+    try
+    {
+        dbusConnection = std::make_shared<sdbusplus::asio::connection>(io);
+        objectServer =
+            std::make_shared<sdbusplus::asio::object_server>(dbusConnection);
+        dbusConnection->request_name(serviceName);
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Initialization error",
+            phosphor::logging::entry("MSG=%s", e.what()));
+        return -1;
+    }
 
     io.run();
     return 0;
