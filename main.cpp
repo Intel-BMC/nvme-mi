@@ -14,7 +14,10 @@
 // limitations under the License.
 */
 
+#include "binding_context.hpp"
+
 #include <boost/asio.hpp>
+#include <mctp_wrapper.hpp>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
@@ -23,17 +26,18 @@ static constexpr const char* serviceName = "xyz.openbmc_project.nvme_mi";
 
 int main()
 {
-    boost::asio::io_context io;
+    auto ioContext = std::make_shared<boost::asio::io_context>();
 
-    boost::asio::signal_set signals(io, SIGINT, SIGTERM);
-    signals.async_wait(
-        [&io](const boost::system::error_code&, const int&) { io.stop(); });
+    boost::asio::signal_set signals(*ioContext, SIGINT, SIGTERM);
+    signals.async_wait([ioContext](const boost::system::error_code&,
+                                   const int&) { ioContext->stop(); });
 
     std::shared_ptr<sdbusplus::asio::connection> dbusConnection{};
     std::shared_ptr<sdbusplus::asio::object_server> objectServer{};
     try
     {
-        dbusConnection = std::make_shared<sdbusplus::asio::connection>(io);
+        dbusConnection =
+            std::make_shared<sdbusplus::asio::connection>(*ioContext);
         objectServer =
             std::make_shared<sdbusplus::asio::object_server>(dbusConnection);
         dbusConnection->request_name(serviceName);
@@ -46,6 +50,21 @@ int main()
         return -1;
     }
 
-    io.run();
+    std::unordered_map<mctpw::BindingType,
+                       std::shared_ptr<nvmemi::BindingContext>>
+        bindingContexts{};
+
+    boost::asio::spawn(
+        [dbusConnection, &bindingContexts](boost::asio::yield_context yield) {
+            constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
+
+            // Create BindingContext for each available MCTP binding type.
+            auto bindingContext = std::make_shared<nvmemi::BindingContext>(
+                dbusConnection, bindingType);
+            bindingContext->initialize(yield);
+            bindingContexts.emplace(bindingType, bindingContext);
+        });
+
+    ioContext->run();
     return 0;
 }

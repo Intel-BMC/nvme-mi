@@ -59,41 +59,41 @@ configure_file(
 
 threads = dependency('threads')
 
+cmake = import('cmake')
+
+mctpwrapper_dep = dependency('mctpwplus', required: dep_required, allow_fallback: false)
+if not mctpwrapper_dep.found()
+     mctpwrapper_proj = subproject('mctpwplus', required: true)
+     mctpwrapper_dep = mctpwrapper_proj.get_variable('wrapperlib_dep')
+endif
+
 deps = [
 	boost,
 	systemd,
 	sdbusplus,
 	phosphorlog_dep,
-	threads
+	threads,
+	mctpwrapper_dep
 ]
+
+src_files = ['main.cpp', 'binding_context.cpp']
 
 if yocto_build.enabled()
 	executable(
 	  'nvme-mi',
-	  'main.cpp',
+	  src_files,
 	  implicit_include_directories: false,
 	  dependencies: deps,
 	  install: true,
 	  install_dir: get_option('bindir'),
-	  override_options : ['warning_level=3', 'werror=true'])
+	  override_options : ['warning_level=0', 'werror=true'])
 else
 	executable(
 	  'nvme-mi',
-	  'main.cpp',
+	  src_files,
 	  implicit_include_directories: false,
 	  dependencies: deps,
 	  install: true,
 	  install_dir: get_option('bindir'),
 	  override_options : ['warning_level=0', 'werror=false'])
-endif
-
-if not build_tests.disabled()
-    gtest = dependency('gtest', main: true, disabler: true, required: false)
-    if not gtest.found() and build_tests.enabled()
-        cmake = import('cmake')
-        gtest_subproject = cmake.subproject('gtest')
-        cm_gtest = gtest_subproject.dependency('gtest')
-        cm_gtest_main = gtest_subproject.dependency('gtest_main')
-        gtest = declare_dependency(dependencies: [cm_gtest, cm_gtest_main, threads])
-    endif
 endif
