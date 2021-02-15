@@ -3,7 +3,7 @@ project(
     'cpp',
     license: 'Apache-2.0',
     version: '0.1',
-	default_options: [
+    default_options: [
         'warning_level=0',
         'werror=false',
         'cpp_std=c++17'
@@ -19,12 +19,14 @@ if yocto_build.enabled()
     dep_required = true
 endif
 
-boost = dependency('boost', required: dep_required, version : '>=1.71', modules: [ 'coroutine', 'context'])
+boost = dependency('boost', required: dep_required, version : '>=1.71',
+        modules: [ 'coroutine', 'context'])
 if not boost.found()
      subproject('boost_1_71_0', required: true)
      boost = declare_dependency(
          include_directories: 'subprojects/boost_1_71_0/install/include',
-		 link_args:['-Lsubprojects/boost_1_71_0/install/lib', '-lboost_context', '-lboost_coroutine']
+          link_args:['-Lsubprojects/boost_1_71_0/install/lib',
+         '-lboost_context', '-lboost_coroutine']
      )
 endif
 
@@ -61,39 +63,34 @@ threads = dependency('threads')
 
 cmake = import('cmake')
 
-mctpwrapper_dep = dependency('mctpwplus', required: dep_required, allow_fallback: false)
+mctpwrapper_dep = dependency('mctpwplus', required: dep_required,
+    allow_fallback: false)
 if not mctpwrapper_dep.found()
      mctpwrapper_proj = subproject('mctpwplus', required: true)
      mctpwrapper_dep = mctpwrapper_proj.get_variable('wrapperlib_dep')
 endif
 
 deps = [
-	boost,
-	systemd,
-	sdbusplus,
-	phosphorlog_dep,
-	threads,
-	mctpwrapper_dep
+    boost,
+    systemd,
+    sdbusplus,
+    phosphorlog_dep,
+    threads,
+    mctpwrapper_dep
 ]
 
-src_files = ['main.cpp', 'drive.cpp']
+src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp']
 
+exe_options = ['warning_level=0', 'werror=false']
 if yocto_build.enabled()
-	executable(
-	  'nvme-mi',
-	  src_files,
-	  implicit_include_directories: false,
-	  dependencies: deps,
-	  install: true,
-	  install_dir: get_option('bindir'),
-	  override_options : ['warning_level=0', 'werror=true'])
-else
-	executable(
-	  'nvme-mi',
-	  src_files,
-	  implicit_include_directories: false,
-	  dependencies: deps,
-	  install: true,
-	  install_dir: get_option('bindir'),
-	  override_options : ['warning_level=0', 'werror=false'])
+    exe_options = ['warning_level=0', 'werror=true']
 endif
+
+executable(
+      'nvme-mi',
+      src_files,
+      implicit_include_directories: false,
+      dependencies: deps,
+      install: true,
+      install_dir: get_option('bindir'),
+      override_options : exe_options)

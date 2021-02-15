@@ -20,10 +20,14 @@
 
 using nvmemi::Drive;
 
+static constexpr double nvmeTemperatureMin = -60.0;
+static constexpr double nvmeTemperatureMax = 127.0;
+
 Drive::Drive(const std::string& driveName,
-             sdbusplus::asio::object_server& /*objServer*/,
+             sdbusplus::asio::object_server& objServer,
              std::shared_ptr<mctpw::MCTPWrapper> wrapper) :
     name(std::regex_replace(driveName, std::regex("[^a-zA-Z0-9_/]+"), "_")),
-    mctpWrapper(wrapper)
+    mctpWrapper(wrapper), subsystemTemp(objServer, driveName + "_Temp",
+                                        nvmeTemperatureMin, nvmeTemperatureMax)
 {
 }

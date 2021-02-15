@@ -16,6 +16,8 @@
 
 #pragma once
 
+#include "numeric_sensor.hpp"
+
 #include <mctp_wrapper.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 #include <string>
@@ -43,5 +45,6 @@ class Drive
   private:
     std::string name{};
     std::shared_ptr<mctpw::MCTPWrapper> mctpWrapper{};
+    NumericSensor subsystemTemp;
 };
 } // namespace nvmemi
