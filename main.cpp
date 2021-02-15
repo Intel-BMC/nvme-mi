@@ -14,7 +14,7 @@
 // limitations under the License.
 */
 
-#include "binding_context.hpp"
+#include "drive.hpp"
 
 #include <boost/asio.hpp>
 #include <mctp_wrapper.hpp>
@@ -50,20 +50,28 @@ int main()
         return -1;
     }
 
-    std::unordered_map<mctpw::BindingType,
-                       std::shared_ptr<nvmemi::BindingContext>>
-        bindingContexts{};
+    std::vector<std::shared_ptr<mctpw::MCTPWrapper>> mctpWrappers{};
+    std::unordered_map<mctpw::eid_t, std::shared_ptr<nvmemi::Drive>> drives{};
+    size_t driveCounter = 1;
 
-    boost::asio::spawn(
-        [dbusConnection, &bindingContexts](boost::asio::yield_context yield) {
-            constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
-
-            // Create BindingContext for each available MCTP binding type.
-            auto bindingContext = std::make_shared<nvmemi::BindingContext>(
-                dbusConnection, bindingType);
-            bindingContext->initialize(yield);
-            bindingContexts.emplace(bindingType, bindingContext);
-        });
+    boost::asio::spawn([dbusConnection, objectServer, &mctpWrappers,
+                        &driveCounter,
+                        &drives](boost::asio::yield_context yield) {
+        constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
+        mctpw::MCTPConfiguration config(mctpw::MessageType::nvmeMgmtMsg,
+                                        bindingType);
+        auto wrapper =
+            std::make_shared<mctpw::MCTPWrapper>(dbusConnection, config);
+        wrapper->detectMctpEndpoints(yield);
+        for (auto& [eid, service] : wrapper->getEndpointMap())
+        {
+            std::string driveName =
+                "NVMeDrive" + std::to_string(driveCounter++);
+            auto drive = std::make_shared<nvmemi::Drive>(
+                driveName, *objectServer, wrapper);
+            drives.emplace(eid, drive);
+        }
+    });
 
     ioContext->run();
     return 0;

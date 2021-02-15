@@ -76,7 +76,7 @@ deps = [
 	mctpwrapper_dep
 ]
 
-src_files = ['main.cpp', 'binding_context.cpp']
+src_files = ['main.cpp', 'drive.cpp']
 
 if yocto_build.enabled()
 	executable(

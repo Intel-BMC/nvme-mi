@@ -17,29 +17,31 @@
 #pragma once
 
 #include <mctp_wrapper.hpp>
+#include <sdbusplus/asio/object_server.hpp>
+#include <string>
 
 namespace nvmemi
 {
 /**
- * @brief Class to manage all NVMe devices coming under an MCTP binding type
+ * @brief Represents NVMe drive
  *
  */
-class BindingContext
+class Drive
 {
   public:
-    BindingContext(std::shared_ptr<sdbusplus::asio::connection> connection,
-                   const mctpw::BindingType binding);
     /**
-     * @brief Perform initialization steps. Finds all available NVMe devices and
-     * initializes each
+     * @brief Construct a new Drive object
      *
-     * @param yield yield_context to be used in DBus calls
+     * @param driveName Human readable name for the drive
+     * @param objServer Existing sdbusplus object_server
+     * @param wrapper MCTPWrapper object
      */
-    void initialize(boost::asio::yield_context yield);
+    Drive(const std::string& driveName,
+          sdbusplus::asio::object_server& objServer,
+          std::shared_ptr<mctpw::MCTPWrapper> wrapper);
 
   private:
-    std::shared_ptr<sdbusplus::asio::connection> busConnection{};
-    const mctpw::BindingType bindingType;
+    std::string name{};
     std::shared_ptr<mctpw::MCTPWrapper> mctpWrapper{};
 };
 } // namespace nvmemi
