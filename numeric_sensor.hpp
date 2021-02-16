@@ -16,10 +16,12 @@
 
 #pragma once
 
-#include <limits>
+#include "threshold.hpp"
+
 #include <memory>
 #include <sdbusplus/asio/object_server.hpp>
 #include <string>
+#include <vector>
 
 namespace nvmemi
 {
@@ -36,11 +38,13 @@ class NumericSensor
      * @param objServer Reference to sdbusplus object_server to create
      * interfaces
      * @param sensorName Human readable name for the sensor
+     * @param thresholdVals List of thresholds applicable for the sensor
      * @param min Minimum value for the sensor
      * @param max Maximum value for the sensor
      */
     NumericSensor(sdbusplus::asio::object_server& objServer,
                   const std::string& sensorName,
+                  std::vector<thresholds::Threshold> thresholdVals,
                   const double min = std::numeric_limits<double>::quiet_NaN(),
                   const double max = std::numeric_limits<double>::quiet_NaN());
     /**
@@ -69,6 +73,11 @@ class NumericSensor
     std::unique_ptr<sdbusplus::asio::dbus_interface> sensorInterface{};
     std::unique_ptr<sdbusplus::asio::dbus_interface> availableInterface{};
     std::unique_ptr<sdbusplus::asio::dbus_interface> operationalInterface{};
+    std::vector<thresholds::Threshold> thresholds{};
+    std::unique_ptr<sdbusplus::asio::dbus_interface>
+        thresholdInterfaceWarning{};
+    std::unique_ptr<sdbusplus::asio::dbus_interface>
+        thresholdInterfaceCritical{};
 
     double value{std::numeric_limits<double>::quiet_NaN()};
     double minValue{std::numeric_limits<double>::quiet_NaN()};
@@ -76,7 +85,15 @@ class NumericSensor
     size_t errCount{0};
 
   protected:
+    struct ThresholdInterface
+    {
+        std::unique_ptr<sdbusplus::asio::dbus_interface>& iface;
+        std::string level;
+        std::string alarm;
+    };
     void incrementError();
     void setInitialProperties(const bool sensorDisabled);
+    std::optional<ThresholdInterface>
+        selectThresholdInterface(const thresholds::Threshold& threshold);
 };
 } // namespace nvmemi

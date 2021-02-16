@@ -16,6 +16,8 @@
 
 #include "numeric_sensor.hpp"
 
+#include "threshold_helper.hpp"
+
 #include <phosphor-logging/log.hpp>
 #include <regex>
 
@@ -32,10 +34,11 @@ static constexpr const char* sensorInterfaceName =
 constexpr const size_t errorThreshold = 5;
 
 NumericSensor::NumericSensor(sdbusplus::asio::object_server& objServer,
-                             const std::string& sensorName, const double min,
-                             const double max) :
+                             const std::string& sensorName,
+                             std::vector<thresholds::Threshold> thresholdVals,
+                             const double min, const double max) :
     name(std::regex_replace(sensorName, std::regex("[^a-zA-Z0-9_/]+"), "_")),
-    minValue(min), maxValue(max)
+    thresholds(std::move(thresholdVals)), minValue(min), maxValue(max)
 {
     std::string currentObjectPath = objPathTemperature + name;
     sensorInterface =
@@ -45,7 +48,16 @@ NumericSensor::NumericSensor(sdbusplus::asio::object_server& objServer,
     operationalInterface = objServer.add_unique_interface(
         currentObjectPath, operationalInterfaceName);
 
-    // TODO Add threshold interfaces
+    if (thresholds::hasWarningInterface(thresholds))
+    {
+        thresholdInterfaceWarning = objServer.add_unique_interface(
+            currentObjectPath, "xyz.openbmc_project.Sensor.Threshold.Warning");
+    }
+    if (thresholds::hasCriticalInterface(thresholds))
+    {
+        thresholdInterfaceCritical = objServer.add_unique_interface(
+            currentObjectPath, "xyz.openbmc_project.Sensor.Threshold.Critical");
+    }
     setInitialProperties(false);
 }
 
@@ -121,4 +133,81 @@ void NumericSensor::setInitialProperties(const bool sensorDisabled)
 
     operationalInterface->register_property("Functional", !sensorDisabled);
     operationalInterface->initialize();
+
+    for (const auto& threshold : thresholds)
+    {
+        auto thresholdIntf = selectThresholdInterface(threshold);
+        if (!thresholdIntf)
+        {
+            continue;
+        }
+
+        // Interface is 0th tuple member
+        if (!thresholdIntf->iface->register_property(thresholdIntf->level,
+                                                     threshold.value))
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "Error registering threshold level property");
+        }
+        if (!thresholdIntf->iface->register_property(thresholdIntf->alarm,
+                                                     false))
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "Error registering threshold alarm property");
+        }
+    }
+
+    if (thresholdInterfaceWarning &&
+        !thresholdInterfaceWarning->initialize(true))
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Error initializing warning threshold interface");
+    }
+
+    if (thresholdInterfaceCritical &&
+        !thresholdInterfaceCritical->initialize(true))
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Error initializing critical threshold interface");
+    }
+}
+
+std::optional<NumericSensor::ThresholdInterface>
+    NumericSensor::selectThresholdInterface(
+        const thresholds::Threshold& threshold)
+{
+    switch (threshold.level)
+    {
+        case thresholds::Level::critical: {
+            switch (threshold.direction)
+            {
+                case thresholds::Direction::high:
+                    return ThresholdInterface{thresholdInterfaceCritical,
+                                              "CriticalHigh",
+                                              "CriticalAlarmHigh"};
+                case thresholds::Direction::low:
+                    return ThresholdInterface{thresholdInterfaceCritical,
+                                              "CriticalLow",
+                                              "CriticalAlarmLow"};
+                default:
+                    return std::nullopt;
+            }
+        }
+        case thresholds::Level::warning: {
+            switch (threshold.direction)
+            {
+                case thresholds::Direction::high:
+                    return ThresholdInterface{thresholdInterfaceWarning,
+                                              "WarningHigh",
+                                              "WarningAlarmHigh"};
+                case thresholds::Direction::low:
+                    return ThresholdInterface{thresholdInterfaceWarning,
+                                              "WarningLow", "WarningAlarmLow"};
+                default:
+                    return std::nullopt;
+            }
+        }
+        default:
+            return std::nullopt;
+    }
 }

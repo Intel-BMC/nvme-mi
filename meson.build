@@ -79,7 +79,7 @@ deps = [
     mctpwrapper_dep
 ]
 
-src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp']
+src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp', 'threshold_helper.cpp']
 
 exe_options = ['warning_level=0', 'werror=false']
 if yocto_build.enabled()
