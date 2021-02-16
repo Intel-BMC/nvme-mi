@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include "change_param.hpp"
 #include "threshold.hpp"
 
 #include <memory>
@@ -83,6 +84,8 @@ class NumericSensor
     double minValue{std::numeric_limits<double>::quiet_NaN()};
     double maxValue{std::numeric_limits<double>::quiet_NaN()};
     size_t errCount{0};
+    double hysteresisTrigger{0};
+    double hysteresisPublish{0};
 
   protected:
     struct ThresholdInterface
@@ -93,6 +96,10 @@ class NumericSensor
     };
     void incrementError();
     void setInitialProperties(const bool sensorDisabled);
+    bool requiresUpdate(const double lVal, const double rVal);
+    void checkThresholds();
+    void assertThreshold(const ChangeParam& change);
+    std::vector<ChangeParam> getThresholdAssertions() const;
     std::optional<ThresholdInterface>
         selectThresholdInterface(const thresholds::Threshold& threshold);
 };
