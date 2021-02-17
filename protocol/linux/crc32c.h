@@ -8,7 +8,7 @@ extern "C" {
 #include <stdint.h>
 #include <stdlib.h>
 
-uint32_t crc32c(uint8_t* buf, int len);
+uint32_t crc32c(const uint8_t* buf, int len);
 
 #ifdef __cplusplus
 }

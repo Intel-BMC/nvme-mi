@@ -79,7 +79,8 @@ deps = [
     mctpwrapper_dep
 ]
 
-src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp', 'threshold_helper.cpp']
+src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp', 'threshold_helper.cpp',
+             'protocol/linux/crc32c.cpp']
 
 exe_options = ['warning_level=0', 'werror=false']
 if yocto_build.enabled()
@@ -94,3 +95,18 @@ executable(
       install: true,
       install_dir: get_option('bindir'),
       override_options : exe_options)
+
+if build_tests.enabled()
+    gtest_dep = dependency('gtest', required:dep_required)
+    if not gtest_dep.found()
+        gtest_subproject = cmake.subproject('gtest')
+        cm_gtest = gtest_subproject.dependency('gtest')
+        cm_gtest_main = gtest_subproject.dependency('gtest_main')
+        gtest_dep = declare_dependency(dependencies: [cm_gtest, cm_gtest_main, threads])
+    endif
+
+    test_protocol_src = ['tests/test_protocol.cpp', 'protocol/linux/crc32c.cpp']
+    test_protocol_dep = [gtest_dep]
+    test_protocol = executable('test_protocol', test_protocol_src, dependencies:test_protocol_dep)
+    test('Protocol-formatting', test_protocol)
+endif

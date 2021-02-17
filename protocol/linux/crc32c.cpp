@@ -77,7 +77,7 @@ unsigned long crctable[256] = {
 /*                   End of CRC Lookup Table                     */
 /*****************************************************************/
 
-uint32_t crc32c(uint8_t* data, int length)
+uint32_t crc32c(const uint8_t* data, int length)
 {
     const uint32_t CRC_INIT = 0xffffffffL;
     const uint32_t XO_ROT = 0xffffffffL;
