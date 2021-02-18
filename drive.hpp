@@ -35,16 +35,26 @@ class Drive
      * @brief Construct a new Drive object
      *
      * @param driveName Human readable name for the drive
+     * @param eid MCTP EID of the drive
      * @param objServer Existing sdbusplus object_server
-     * @param wrapper MCTPWrapper object
+     * @param wrapper shared_ptr to MCTPWrapper
      */
-    Drive(const std::string& driveName,
+    Drive(const std::string& driveName, mctpw::eid_t eid,
           sdbusplus::asio::object_server& objServer,
           std::shared_ptr<mctpw::MCTPWrapper> wrapper);
+    /**
+     * @brief Send MCTP request for NVM Subsystem health status poll and receive
+     * response
+     *
+     * @param yield yield_context object to wait on mctp transfers
+     */
+    void pollSubsystemHealthStatus(boost::asio::yield_context yield);
 
   private:
     std::string name{};
     std::shared_ptr<mctpw::MCTPWrapper> mctpWrapper{};
     NumericSensor subsystemTemp;
+    mctpw::eid_t mctpEid{};
+    static constexpr std::chrono::milliseconds hsPollTimeout{100};
 };
 } // namespace nvmemi

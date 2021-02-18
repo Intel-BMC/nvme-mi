@@ -17,12 +17,46 @@
 #include "drive.hpp"
 
 #include <boost/asio.hpp>
+#include <boost/bind/bind.hpp>
 #include <mctp_wrapper.hpp>
 #include <phosphor-logging/log.hpp>
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
 static constexpr const char* serviceName = "xyz.openbmc_project.nvme_mi";
+static const std::chrono::seconds subsystemHsPollInterval(1);
+
+void doPoll(
+    boost::asio::yield_context yield,
+    std::unordered_map<mctpw::eid_t, std::shared_ptr<nvmemi::Drive>>& drives,
+    std::shared_ptr<boost::asio::steady_timer> timer)
+{
+    // TODO. Add a mechanism to trigger the poll when new drive is added and
+    // stop the same when there is no drive connected
+    while (true)
+    {
+        boost::system::error_code ec;
+        timer->expires_after(subsystemHsPollInterval);
+        timer->async_wait(yield[ec]);
+        if (ec == boost::asio::error::operation_aborted)
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "Poll timer aborted");
+            break;
+        }
+        else if (ec)
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "Sensor poll timer failed");
+            break;
+        }
+
+        for (auto& [eid, drive] : drives)
+        {
+            drive->pollSubsystemHealthStatus(yield);
+        }
+    }
+}
 
 int main()
 {
@@ -53,9 +87,10 @@ int main()
     std::vector<std::shared_ptr<mctpw::MCTPWrapper>> mctpWrappers{};
     std::unordered_map<mctpw::eid_t, std::shared_ptr<nvmemi::Drive>> drives{};
     size_t driveCounter = 1;
+    auto timer = std::make_shared<boost::asio::steady_timer>(*ioContext);
 
     boost::asio::spawn([dbusConnection, objectServer, &mctpWrappers,
-                        &driveCounter,
+                        &driveCounter, timer,
                         &drives](boost::asio::yield_context yield) {
         constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
         mctpw::MCTPConfiguration config(mctpw::MessageType::nvmeMgmtMsg,
@@ -68,9 +103,11 @@ int main()
             std::string driveName =
                 "NVMeDrive" + std::to_string(driveCounter++);
             auto drive = std::make_shared<nvmemi::Drive>(
-                driveName, *objectServer, wrapper);
+                driveName, eid, *objectServer, wrapper);
             drives.emplace(eid, drive);
         }
+
+        doPoll(yield, boost::ref(drives), timer);
     });
 
     ioContext->run();
