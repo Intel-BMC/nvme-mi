@@ -18,6 +18,7 @@
 
 #include "protocol/mi/subsystem_hs_poll.hpp"
 #include "protocol/mi_msg.hpp"
+#include "protocol/mi_rsp.hpp"
 
 #include <phosphor-logging/log.hpp>
 #include <regex>
@@ -68,6 +69,7 @@ void Drive::pollSubsystemHealthStatus(boost::asio::yield_context yield)
 {
     using Message = nvmemi::protocol::ManagementInterfaceMessage<uint8_t*>;
     using DWord1 = nvmemi::protocol::subsystemhs::RequestDWord1;
+    using Response = nvmemi::protocol::subsystemhs::ResponseData;
     static constexpr size_t reqSize =
         Message::minSize + sizeof(Message::CRC32C);
     std::vector<uint8_t> reqBuffer(reqSize, 0x00);
@@ -91,5 +93,22 @@ void Drive::pollSubsystemHealthStatus(boost::asio::yield_context yield)
     phosphor::logging::log<phosphor::logging::level::DEBUG>(
         getHexString(response.begin(), response.end()).c_str());
 
-    // TODO Add sensor update
+    try
+    {
+        nvmemi::protocol::ManagementInterfaceResponse respMsg(response);
+        auto [optData, len] = respMsg.getOptionalResponseData();
+        if (len <= 0)
+        {
+            throw std::runtime_error("Optional data not found");
+        }
+        auto respPtr = reinterpret_cast<const Response*>(optData);
+        auto temperature =
+            nvmemi::protocol::subsystemhs::convertToCelsius(respPtr->cTemp);
+        this->subsystemTemp.updateValue(temperature);
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            (std::string("NVM Poll error. ") + e.what()).c_str());
+    }
 }
