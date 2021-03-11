@@ -16,6 +16,7 @@
 
 #include "drive.hpp"
 
+#include "constants.hpp"
 #include "protocol/mi/subsystem_hs_poll.hpp"
 #include "protocol/mi_msg.hpp"
 #include "protocol/mi_rsp.hpp"
@@ -50,6 +51,19 @@ Drive::Drive(const std::string& driveName, mctpw::eid_t eid,
                   nvmeTemperatureMin, nvmeTemperatureMax),
     mctpEid(eid), mctpWrapper(wrapper)
 {
+    std::string objectName = nvmemi::constants::openBmcDBusPrefix + driveName;
+    std::string interfaceName =
+        nvmemi::constants::interfacePrefix + std::string("drive_log");
+
+    driveLogInterface =
+        objServer.add_unique_interface(objectName, interfaceName);
+
+    if (!driveLogInterface->register_method(
+            "CollectLog", [this]() { return this->collectDriveLog(); }))
+    {
+        throw std::runtime_error("Register method failed: CollectLog");
+    }
+    driveLogInterface->initialize();
 }
 
 template <typename It>
@@ -145,4 +159,10 @@ void Drive::logCWarnState(bool cwarn)
                                      "NVM Subsystem", this->name.c_str(),
                                      "True", "False"));
     }
+}
+
+std::tuple<int, std::string> Drive::collectDriveLog()
+{
+    constexpr int status = 0;
+    return std::make_tuple(status, "");
 }

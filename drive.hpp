@@ -51,12 +51,15 @@ class Drive
     void pollSubsystemHealthStatus(boost::asio::yield_context yield);
 
   private:
+    std::tuple<int, std::string> collectDriveLog();
+
     std::string name{};
     std::shared_ptr<mctpw::MCTPWrapper> mctpWrapper{};
     NumericSensor subsystemTemp;
     mctpw::eid_t mctpEid{};
     static constexpr std::chrono::milliseconds hsPollTimeout{100};
     bool cwarnState = false;
+    std::unique_ptr<sdbusplus::asio::dbus_interface> driveLogInterface{};
 
     void logCWarnState(bool cwarn);
 };
