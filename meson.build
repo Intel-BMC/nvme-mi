@@ -79,8 +79,8 @@ deps = [
     mctpwrapper_dep
 ]
 
-src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp', 'threshold_helper.cpp',
-             'protocol/linux/crc32c.cpp']
+src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp',
+             'threshold_helper.cpp', 'protocol/linux/crc32c.cpp']
 
 exe_options = ['warning_level=0', 'werror=false']
 if yocto_build.enabled()
@@ -102,11 +102,30 @@ if build_tests.enabled()
         gtest_subproject = cmake.subproject('gtest')
         cm_gtest = gtest_subproject.dependency('gtest')
         cm_gtest_main = gtest_subproject.dependency('gtest_main')
-        gtest_dep = declare_dependency(dependencies: [cm_gtest, cm_gtest_main, threads])
+        gtest_dep = declare_dependency(dependencies: [cm_gtest,
+            cm_gtest_main, threads])
     endif
 
     test_protocol_src = ['tests/test_protocol.cpp', 'protocol/linux/crc32c.cpp']
     test_protocol_dep = [gtest_dep]
-    test_protocol = executable('test_protocol', test_protocol_src, dependencies:test_protocol_dep)
+    test_protocol = executable('test_protocol', test_protocol_src,
+         dependencies:test_protocol_dep)
     test('Protocol-formatting', test_protocol)
+
+    test_createdrive_src = ['tests/test_create_drive.cpp',
+        'tests/mctp_wrapper.cpp', 'drive.cpp', 'protocol/linux/crc32c.cpp',
+        'numeric_sensor.cpp', 'threshold_helper.cpp']
+    mctpwrapper_mock_dep = dependency('mctpwplus', required: dep_required,
+        allow_fallback: false)
+    if not mctpwrapper_mock_dep.found()
+        mctpwrapper_mock_proj = subproject('mctpwplus', required: true)
+        mctpwrapper_mock_dep = declare_dependency(
+            include_directories:'subprojects/mctpwplus/mctpwplus')
+    endif
+    test_createdrive_dep = [gtest_dep, boost, systemd, sdbusplus,
+        phosphorlog_dep, threads, mctpwrapper_mock_dep]
+    test_createdrive = executable('test_createdrive', test_createdrive_src,
+        dependencies:test_createdrive_dep)
+    test('Create drive test', test_createdrive)
+
 endif

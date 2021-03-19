@@ -33,6 +33,7 @@ void doPoll(
 {
     // TODO. Add a mechanism to trigger the poll when new drive is added and
     // stop the same when there is no drive connected
+    // TODO. Convert while loop to tail recursion
     while (true)
     {
         boost::system::error_code ec;
