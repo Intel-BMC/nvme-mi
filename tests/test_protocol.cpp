@@ -15,6 +15,7 @@
 */
 #include "../protocol/mi_msg.hpp"
 #include "../protocol/nvme_msg.hpp"
+#include "../protocol/nvme_rsp.hpp"
 
 #include <gtest/gtest.h>
 
@@ -99,6 +100,53 @@ TEST(NVMeMsg, Set)
     expected[1] = 0x91;
     msg.setCommandSlot(prot::CommandSlot::slot1);
     EXPECT_EQ(expected, testInput);
+}
+
+TEST(NVMeRsp, Create)
+{
+    namespace prot = nvmemi::protocol;
+    using ConstResp = prot::NVMeResponse<const uint8_t*>;
+    uint8_t* nullPtr = nullptr;
+    EXPECT_THROW(prot::NVMeResponse msg(nullPtr, 0), std::invalid_argument);
+    EXPECT_THROW(
+        prot::NVMeResponse msg(static_cast<const uint8_t*>(nullPtr), 0),
+        std::invalid_argument);
+    std::array<uint8_t, 3> data{};
+    EXPECT_THROW(prot::NVMeResponse msg(data), std::length_error);
+    EXPECT_THROW(prot::NVMeResponse msg(
+                     static_cast<const uint8_t*>(data.data()), data.size()),
+                 std::length_error);
+    std::array<uint8_t, 4> data2{};
+    EXPECT_ANY_THROW(prot::NVMeResponse msg(data2));
+    std::array<uint8_t, 5> data3{};
+    EXPECT_ANY_THROW(prot::NVMeResponse msg(data3));
+    std::array<uint8_t, 6> data4{};
+    EXPECT_ANY_THROW(prot::NVMeResponse msg(data4));
+    std::array<uint8_t, ConstResp::minSize + sizeof(ConstResp::CRC32C)> data5 =
+        {0x00, 0x00, 0x00, 0x00, 0x00, 0x35, 0x76, 0x72, 0x45};
+    EXPECT_NO_THROW(prot::NVMeResponse msg(data5));
+    data5[5] = 0x00;
+    EXPECT_ANY_THROW(prot::NVMeResponse msg(data5));
+    {
+        std::array<uint8_t, 12> data5 = {0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
+                                         0x00, 0x00, 0x32, 0x18, 0x6d, 0x51};
+        EXPECT_NO_THROW(prot::NVMeResponse msg(data5));
+        prot::NVMeResponse msg(data5);
+        EXPECT_EQ(msg.getCRC(), 0x516d1832);
+        EXPECT_NO_THROW(msg.checkCRC());
+    }
+}
+
+TEST(NVMeRsp, GetSet)
+{
+    namespace prot = nvmemi::protocol;
+    {
+        std::array<uint8_t, 12> data = {0x084, 0x08, 0x00, 0x00, 0x02, 0x00,
+                                        0x00,  0x00, 0x51, 0x78, 0x7e, 0x68};
+        prot::NVMeResponse msg(data);
+        EXPECT_EQ(msg.getStatus(), 0x02);
+        EXPECT_EQ(msg.getNvmeMiMsgType(), prot::NVMeMessageTye::miCommand);
+    } // namespace nvmemi::protocol;
 }
 
 TEST(ManagementIntgerfaceMessage, Create)
