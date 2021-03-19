@@ -36,4 +36,13 @@ struct RequestData
     uint8_t portId;
     DataStructureType dataStructureType;
 } __attribute__((packed));
+
+struct SubsystemInfo
+{
+    uint8_t numberOfPorts;
+    uint8_t majorVersion;
+    uint8_t minorVersion;
+    uint8_t reserverd[29];
+} __attribute__((packed));
+
 } // namespace nvmemi::protocol::readnvmeds

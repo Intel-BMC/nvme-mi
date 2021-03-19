@@ -17,18 +17,23 @@
 #include "drive.hpp"
 
 #include "constants.hpp"
+#include "protocol/mi/read_nvmemi_ds.hpp"
 #include "protocol/mi/subsystem_hs_poll.hpp"
 #include "protocol/mi_msg.hpp"
 #include "protocol/mi_rsp.hpp"
 
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <phosphor-logging/log.hpp>
 #include <regex>
 
 using nvmemi::Drive;
 using nvmemi::thresholds::Threshold;
+using DataStructureType = nvmemi::protocol::readnvmeds::DataStructureType;
 
 static constexpr double nvmeTemperatureMin = -60.0;
 static constexpr double nvmeTemperatureMax = 127.0;
+static const std::chrono::milliseconds normalRespTimeout{600};
 
 static std::vector<Threshold> getDefaultThresholds()
 {
@@ -58,8 +63,10 @@ Drive::Drive(const std::string& driveName, mctpw::eid_t eid,
     driveLogInterface =
         objServer.add_unique_interface(objectName, interfaceName);
 
-    if (!driveLogInterface->register_method(
-            "CollectLog", [this]() { return this->collectDriveLog(); }))
+    if (!this->driveLogInterface->register_method(
+            "CollectLog", [this](boost::asio::yield_context yield) {
+                return this->collectDriveLog(yield);
+            }))
     {
         throw std::runtime_error("Register method failed: CollectLog");
     }
@@ -161,8 +168,121 @@ void Drive::logCWarnState(bool cwarn)
     }
 }
 
-std::tuple<int, std::string> Drive::collectDriveLog()
+static std::pair<const uint8_t*, ssize_t>
+    getNVMeDatastructOptionalData(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                                  boost::asio::yield_context yield,
+                                  DataStructureType dsType, uint8_t portId,
+                                  uint16_t controllerId)
 {
-    constexpr int status = 0;
-    return std::make_tuple(status, "");
+    using MIRequest =
+        nvmemi::protocol::ManagementInterfaceMessage<const uint8_t*>;
+    std::vector<uint8_t> requestBuffer(
+        MIRequest::minSize + sizeof(MIRequest::CRC32C), 0x00);
+    nvmemi::protocol::ManagementInterfaceMessage reqMsg(requestBuffer);
+    reqMsg.setMiOpCode(nvmemi::protocol::MiOpCode::readDataStructure);
+
+    auto reqPtr = reinterpret_cast<nvmemi::protocol::readnvmeds::RequestData*>(
+        reqMsg.getDWord0());
+    reqPtr->controllerId = controllerId;
+    reqPtr->dataStructureType = dsType;
+    reqPtr->portId = portId;
+    reqMsg.setCRC();
+
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("ReadNVMe data structure request " +
+         getHexString(requestBuffer.begin(), requestBuffer.end()))
+            .c_str());
+
+    auto [ec, response] =
+        wrapper.sendReceiveYield(yield, eid, requestBuffer, normalRespTimeout);
+    if (ec)
+    {
+        throw boost::system::system_error(ec);
+    }
+
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("ReadNVMe data structure response " +
+         getHexString(response.begin(), response.end()))
+            .c_str());
+
+    nvmemi::protocol::ManagementInterfaceResponse miRsp(response);
+    // TODO Check status code
+    auto [data, len] = miRsp.getOptionalResponseData();
+    if (len <= 0)
+    {
+        throw std::runtime_error("Optional data not found in response");
+    }
+
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("Optional data " + getHexString(data, data + len)).c_str());
+
+    return std::make_pair(data, len);
+}
+
+static nvmemi::protocol::readnvmeds::SubsystemInfo
+    getSubsystemInfo(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                     boost::asio::yield_context yield)
+{
+    auto [data, len] = getNVMeDatastructOptionalData(
+        wrapper, eid, yield, DataStructureType::nvmSubsystemInfo, 0, 0);
+    using SubsystemInfo = nvmemi::protocol::readnvmeds::SubsystemInfo;
+    if (len < sizeof(SubsystemInfo))
+    {
+        throw std::runtime_error("Expected more bytes for subsystem info");
+    }
+    auto subsystemInfo = reinterpret_cast<const SubsystemInfo*>(data);
+    return *subsystemInfo;
+}
+
+std::tuple<int, std::string>
+    Drive::collectDriveLog(boost::asio::yield_context yield)
+{
+    enum ErrorStatus : uint8_t
+    {
+        success = 0,
+        fileSystem,
+        emptyJson,
+    };
+
+    nlohmann::json jsonObject;
+    std::optional<nvmemi::protocol::readnvmeds::SubsystemInfo> subsystemInfo =
+        std::nullopt;
+    try
+    {
+        subsystemInfo =
+            getSubsystemInfo(*this->mctpWrapper, this->mctpEid, yield);
+        nlohmann::json subsystemJson;
+        subsystemJson["Major"] = static_cast<int>(subsystemInfo->majorVersion);
+        subsystemJson["Minor"] = static_cast<int>(subsystemInfo->minorVersion);
+        subsystemJson["Ports"] =
+            static_cast<int>(subsystemInfo->numberOfPorts + 1);
+        jsonObject["NVM_Subsystem_Info"] = subsystemJson;
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting NVM subsystem information",
+            phosphor::logging::entry("MSG=%s", e.what()));
+    }
+    if (jsonObject.empty())
+    {
+        std::make_tuple(ErrorStatus::emptyJson,
+                        "All commands failed to get response");
+    }
+
+    unsigned long fileCount =
+        std::chrono::system_clock::now().time_since_epoch() /
+        std::chrono::milliseconds(1);
+    std::string fileName =
+        "/tmp/nvmemi_jsondump_" + std::to_string(fileCount) + ".json";
+    std::fstream jsonDump(fileName, std::ios::out);
+    if (!jsonDump.is_open())
+    {
+        std::string errString =
+            "Error opening " + fileName + ". " + strerror(errno);
+        return std::make_tuple(ErrorStatus::fileSystem, errString);
+    }
+    jsonDump << jsonObject.dump(2, ' ', true,
+                                nlohmann::json::error_handler_t::replace);
+    return std::make_tuple(ErrorStatus::success, fileName);
 }

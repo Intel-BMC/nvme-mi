@@ -51,7 +51,8 @@ class Drive
     void pollSubsystemHealthStatus(boost::asio::yield_context yield);
 
   private:
-    std::tuple<int, std::string> collectDriveLog();
+    std::tuple<int, std::string>
+        collectDriveLog(boost::asio::yield_context yield);
 
     std::string name{};
     std::shared_ptr<mctpw::MCTPWrapper> mctpWrapper{};

@@ -51,6 +51,18 @@ systemd_system_unit_dir = systemd.get_pkgconfig_variable(
     'systemdsystemunitdir',
     define_variable: ['prefix', get_option('prefix')])
 
+if cpp.has_header('nlohmann/json.hpp')
+    nlohmann_json = declare_dependency()
+    message('nlohmann json already found')
+else
+    nlohmann_json = dependency('', required: yocto_build.enabled())
+    subproject('nlohmann', required: true)
+    nlohmann_json = declare_dependency(
+      include_directories: [
+          'subprojects/nlohmann/single_include',
+          'subprojects/nlohmann/single_include/nlohmann'])
+endif
+
 configure_file(
   copy: true,
   input: 'service_files/xyz.openbmc_project.nvme-mi.service',
@@ -76,7 +88,8 @@ deps = [
     sdbusplus,
     phosphorlog_dep,
     threads,
-    mctpwrapper_dep
+    mctpwrapper_dep,
+    nlohmann_json
 ]
 
 src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp',
@@ -123,7 +136,7 @@ if build_tests.enabled()
             include_directories:'subprojects/mctpwplus/mctpwplus')
     endif
     test_createdrive_dep = [gtest_dep, boost, systemd, sdbusplus,
-        phosphorlog_dep, threads, mctpwrapper_mock_dep]
+        phosphorlog_dep, threads, mctpwrapper_mock_dep, nlohmann_json]
     test_createdrive = executable('test_createdrive', test_createdrive_src,
         dependencies:test_createdrive_dep)
     test('Create drive test', test_createdrive)
