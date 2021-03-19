@@ -14,6 +14,7 @@
 // limitations under the License.
 */
 #include "../protocol/mi_msg.hpp"
+#include "../protocol/mi_rsp.hpp"
 #include "../protocol/nvme_msg.hpp"
 #include "../protocol/nvme_rsp.hpp"
 
@@ -245,6 +246,54 @@ TEST(ManagementIntgerfaceMessage, GetSet)
     EXPECT_EQ(locDword1[3], 0x04);
 }
 
+TEST(ManagementIntgerfaceResponse, GetSet)
+{
+    namespace prot = nvmemi::protocol;
+    using ConstMIResponse = prot::ManagementInterfaceResponse<const uint8_t*>;
+    using MIResponse = prot::ManagementInterfaceResponse<uint8_t*>;
+    uint8_t* nullPtr = nullptr;
+    EXPECT_THROW(
+        ConstMIResponse msg(nullPtr, ConstMIResponse::minSize +
+                                         sizeof(ConstMIResponse::CRC32C)),
+        std::invalid_argument);
+    EXPECT_THROW(MIResponse msg(nullPtr, ConstMIResponse::minSize +
+                                             sizeof(ConstMIResponse::CRC32C)),
+                 std::invalid_argument);
+    {
+        std::vector<uint8_t> data = {0x00, 0x00, 0x00, 0x00, 0x00,
+                                     0x35, 0x76, 0x72, 0x45};
+        EXPECT_THROW(ConstMIResponse msg(data), std::length_error);
+        EXPECT_THROW(MIResponse msg(data), std::length_error);
+        data[0] = 0x01;
+        EXPECT_THROW(MIResponse msg(data), std::runtime_error);
+    }
+    {
+        std::array<uint8_t, 14> data1 = {0x84, 0x88, 0x0,  0x0, 0x2,
+                                         0x3,  0x4,  0x5,  0x6, 0x7,
+                                         0xcd, 0x3b, 0xb3, 0xca};
+        EXPECT_NO_THROW(prot::ManagementInterfaceResponse response(data1));
+
+        std::array<uint8_t,
+                   ConstMIResponse::minSize + sizeof(ConstMIResponse::CRC32C)>
+            data2 = {0x84, 0x88, 0x0,  0x0,  0x2,  0x3,
+                     0x4,  0x5,  0x16, 0xc3, 0x45, 0xc};
+        EXPECT_NO_THROW(prot::ManagementInterfaceResponse response(data2));
+        prot::ManagementInterfaceResponse response(data1);
+        {
+            auto [rsp, len] = response.getNVMeManagementResponse();
+            EXPECT_EQ(len, 3);
+            EXPECT_EQ(rsp[0], 0x03);
+            EXPECT_EQ(rsp[1], 0x04);
+            EXPECT_EQ(rsp[2], 0x05);
+        }
+        {
+            auto [rsp, len] = response.getOptionalResponseData();
+            EXPECT_EQ(len, 2);
+            EXPECT_EQ(rsp[0], 0x06);
+            EXPECT_EQ(rsp[1], 0x07);
+        }
+    } // namespace nvmemi::protocol;
+}
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
