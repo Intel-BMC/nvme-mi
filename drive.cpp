@@ -79,7 +79,7 @@ static std::string getHexString(It begin, It end)
     std::stringstream ss;
     while (begin < end)
     {
-        ss << std::hex << std::setfill('0') << std::setw(2)
+        ss << "0x" << std::hex << std::setfill('0') << std::setw(2)
            << static_cast<int>(*begin) << ' ';
         begin++;
     }
@@ -234,6 +234,15 @@ static nvmemi::protocol::readnvmeds::SubsystemInfo
     return *subsystemInfo;
 }
 
+static std::optional<std::string> getPortInfo(mctpw::MCTPWrapper& wrapper,
+                                              mctpw::eid_t eid, uint8_t portId,
+                                              boost::asio::yield_context yield)
+{
+    auto [data, len] = getNVMeDatastructOptionalData(
+        wrapper, eid, yield, DataStructureType::portInfo, portId, 0);
+    return getHexString(data, data + len);
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -264,6 +273,25 @@ std::tuple<int, std::string>
             "Error getting NVM subsystem information",
             phosphor::logging::entry("MSG=%s", e.what()));
     }
+    if (subsystemInfo)
+    {
+        uint8_t currentPort = 0;
+        nlohmann::json portInfoJson;
+        for (currentPort = 0; currentPort <= subsystemInfo->numberOfPorts;
+             currentPort++)
+        {
+            auto portInfo = getPortInfo(*this->mctpWrapper, this->mctpEid,
+                                        currentPort, yield);
+            if (!portInfo)
+            {
+                continue;
+            }
+            portInfoJson["Port" + std::to_string(currentPort)] =
+                portInfo.value();
+        }
+        jsonObject["Ports"] = portInfoJson;
+    }
+
     if (jsonObject.empty())
     {
         std::make_tuple(ErrorStatus::emptyJson,
