@@ -286,6 +286,27 @@ std::optional<std::string> getControllerInfo(mctpw::MCTPWrapper& wrapper,
     }
 }
 
+std::vector<std::pair<nvmemi::protocol::NVMeMessageTye, uint8_t>>
+    getOptionalCommands(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                        boost::asio::yield_context yield)
+{
+    static constexpr uint8_t cmdMask = 0x78;
+    static constexpr uint8_t cmdIdx = 3;
+    std::vector<std::pair<nvmemi::protocol::NVMeMessageTye, uint8_t>>
+        optionalCommands;
+    auto [data, len] = getNVMeDatastructOptionalData(
+        wrapper, eid, yield, DataStructureType::optionalCommands, 0, 0);
+    // Optional commands starts from index 2.
+    for (size_t idx = 2; (idx + 1) < len; idx = idx + sizeof(uint16_t))
+    {
+        optionalCommands.emplace_back(
+            static_cast<nvmemi::protocol::NVMeMessageTye>(
+                (data[idx] & cmdMask) >> cmdIdx),
+            data[idx + 1]);
+    }
+    return optionalCommands;
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -357,6 +378,26 @@ std::tuple<int, std::string>
     {
         phosphor::logging::log<phosphor::logging::level::WARNING>(
             "Error getting controller list",
+            phosphor::logging::entry("MSG=%s", e.what()));
+    }
+    try
+    {
+        auto optionalCommands =
+            getOptionalCommands(*this->mctpWrapper, this->mctpEid, yield);
+        std::vector<nlohmann::json> optionalCommandsJson{};
+        for (const auto& [msgType, cmd] : optionalCommands)
+        {
+            nlohmann::json cmdJson;
+            cmdJson["Type"] = msgType;
+            cmdJson["OpCode"] = cmd;
+            optionalCommandsJson.emplace_back(cmdJson);
+        }
+        jsonObject["OptionalCommands"] = optionalCommandsJson;
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting optional commands",
             phosphor::logging::entry("MSG=%s", e.what()));
     }
 
