@@ -243,6 +243,26 @@ static std::optional<std::string> getPortInfo(mctpw::MCTPWrapper& wrapper,
     return getHexString(data, data + len);
 }
 
+std::vector<uint16_t> getControllerList(mctpw::MCTPWrapper& wrapper,
+                                        mctpw::eid_t eid,
+                                        boost::asio::yield_context yield)
+{
+    auto [data, len] = getNVMeDatastructOptionalData(
+        wrapper, eid, yield, DataStructureType::controllerList, 0, 0);
+    std::vector<uint16_t> controllerList;
+    size_t i = 0;
+    if (len % 2 == 1)
+    {
+        throw std::invalid_argument("Expected even number of bytes");
+    }
+    for (i = 0; i < len; i = i + sizeof(uint16_t))
+    {
+        auto controllerId = reinterpret_cast<const uint16_t*>(data + i);
+        controllerList.emplace_back(le16toh(*controllerId));
+    }
+    return controllerList;
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -290,6 +310,18 @@ std::tuple<int, std::string>
                 portInfo.value();
         }
         jsonObject["Ports"] = portInfoJson;
+    }
+    try
+    {
+        auto controllerList =
+            getControllerList(*this->mctpWrapper, this->mctpEid, yield);
+        jsonObject["Controllers"] = controllerList;
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting controller list",
+            phosphor::logging::entry("MSG=%s", e.what()));
     }
 
     if (jsonObject.empty())
