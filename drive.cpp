@@ -183,7 +183,7 @@ static std::pair<const uint8_t*, ssize_t>
 
     auto reqPtr = reinterpret_cast<nvmemi::protocol::readnvmeds::RequestData*>(
         reqMsg.getDWord0());
-    reqPtr->controllerId = controllerId;
+    reqPtr->controllerId = htobe32(controllerId);
     reqPtr->dataStructureType = dsType;
     reqPtr->portId = portId;
     reqMsg.setCRC();
@@ -263,6 +263,29 @@ std::vector<uint16_t> getControllerList(mctpw::MCTPWrapper& wrapper,
     return controllerList;
 }
 
+std::optional<std::string> getControllerInfo(mctpw::MCTPWrapper& wrapper,
+                                             mctpw::eid_t eid,
+                                             uint16_t controllerId,
+                                             boost::asio::yield_context yield)
+{
+    try
+    {
+        auto [data, len] = getNVMeDatastructOptionalData(
+            wrapper, eid, yield, DataStructureType::controllerInfo, 0,
+            controllerId);
+        return getHexString(data, data + len);
+    }
+    catch (const std::exception& e)
+    {
+
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting controller information",
+            phosphor::logging::entry("MSG=%s", e.what()),
+            phosphor::logging::entry("ID=%d", controllerId));
+        return std::nullopt;
+    }
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -316,6 +339,19 @@ std::tuple<int, std::string>
         auto controllerList =
             getControllerList(*this->mctpWrapper, this->mctpEid, yield);
         jsonObject["Controllers"] = controllerList;
+        nlohmann::json controllerInfoJson;
+        for (uint16_t controllerId : controllerList)
+        {
+            auto controllerHexString = getControllerInfo(
+                *this->mctpWrapper, this->mctpEid, controllerId, yield);
+            if (controllerHexString)
+            {
+                controllerInfoJson["Controller" +
+                                   std::to_string(controllerId)] =
+                    controllerHexString.value();
+            }
+        }
+        jsonObject["ControllerInfo"] = controllerInfoJson;
     }
     catch (const std::exception& e)
     {
