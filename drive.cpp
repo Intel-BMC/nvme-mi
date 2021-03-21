@@ -17,6 +17,7 @@
 #include "drive.hpp"
 
 #include "constants.hpp"
+#include "protocol/mi/controller_hs_poll.hpp"
 #include "protocol/mi/read_nvmemi_ds.hpp"
 #include "protocol/mi/subsystem_hs_poll.hpp"
 #include "protocol/mi_msg.hpp"
@@ -307,6 +308,65 @@ std::vector<std::pair<nvmemi::protocol::NVMeMessageTye, uint8_t>>
     return optionalCommands;
 }
 
+std::optional<nlohmann::json>
+    getControllerHSPollResponse(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                                boost::asio::yield_context yield)
+{
+    using Request = nvmemi::protocol::ManagementInterfaceMessage<uint8_t*>;
+    std::vector<uint8_t> requestBuffer(
+        Request::minSize + sizeof(Request::CRC32C), 0x00);
+    Request msg(requestBuffer);
+    msg.setMiOpCode(nvmemi::protocol::MiOpCode::controllerHealthStatusPoll);
+    auto dword0 = reinterpret_cast<nvmemi::protocol::controllerhspoll::DWord0*>(
+        msg.getDWord0());
+    auto dword1 = reinterpret_cast<nvmemi::protocol::controllerhspoll::DWord1*>(
+        msg.getDWord1());
+    dword0->maxEntries = 0xFE;
+    // TODO. This will fetch status of maximum 255 controllers. Add support to
+    // get HS poll response if number of controllers is greater than that
+    dword0->startId = 0;
+    dword0->reportAll = true;
+    msg.setCRC();
+
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("GetControllerHSPollResponse request " +
+         getHexString(requestBuffer.begin(), requestBuffer.end()))
+            .c_str());
+
+    auto [ec, response] =
+        wrapper.sendReceiveYield(yield, eid, requestBuffer, normalRespTimeout);
+    if (ec)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            ("GetControllerHSPollResponse: " + ec.message()).c_str());
+        return std::nullopt;
+    }
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("GetControllerHSPollResponse response " +
+         getHexString(response.begin(), response.end()))
+            .c_str());
+
+    nvmemi::protocol::ManagementInterfaceResponse miRsp(response);
+    auto nvmeMiResponse = miRsp.getNVMeManagementResponse();
+    uint8_t respEntries = nvmeMiResponse.first[2];
+    nlohmann::json jsonObject;
+    jsonObject["Entries"] = respEntries;
+
+    // TODO Check status code
+    auto [data, len] = miRsp.getOptionalResponseData();
+    if (len <= 0)
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "GetControllerHSPollResponse: Optional data not found");
+        return std::nullopt;
+    }
+    auto hexString = getHexString(data, data + len);
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("Optional data " + hexString).c_str());
+    jsonObject["Data"] = hexString;
+    return jsonObject;
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -398,6 +458,21 @@ std::tuple<int, std::string>
     {
         phosphor::logging::log<phosphor::logging::level::WARNING>(
             "Error getting optional commands",
+            phosphor::logging::entry("MSG=%s", e.what()));
+    }
+    try
+    {
+        auto controllerHS = getControllerHSPollResponse(*this->mctpWrapper,
+                                                        this->mctpEid, yield);
+        if (controllerHS)
+        {
+            jsonObject["ControllerHSPoll"] = controllerHS.value();
+        }
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting controller hs poll",
             phosphor::logging::entry("MSG=%s", e.what()));
     }
 
