@@ -14,6 +14,7 @@
 // limitations under the License.
 */
 #include "../protocol/admin/admin_cmd.hpp"
+#include "../protocol/admin/admin_rsp.hpp"
 #include "../protocol/mi/subsystem_hs_poll.hpp"
 #include "../protocol/mi_msg.hpp"
 #include "../protocol/mi_rsp.hpp"
@@ -365,6 +366,21 @@ TEST(AdminCommand, Create)
     EXPECT_EQ(test[29], 0x56);
     EXPECT_EQ(test[30], 0x34);
     EXPECT_EQ(test[31], 0x12);
+}
+
+TEST(AdminCommandResponse, Create)
+{
+    std::vector<uint8_t> testData = {0x84, 0x88, 0x0,  0x0,  0x0,  0x0,  0x0,
+                                     0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,
+                                     0x0,  0x0,  0x0,  0x0,  0x18, 0x80, 0x12,
+                                     0x34, 0x1d, 0x2a, 0x42, 0x49};
+    namespace prot = nvmemi::protocol;
+    prot::AdminCommandResponse response(testData);
+    auto [data, len] = response.getResponseData();
+    EXPECT_EQ(len, 2);
+    EXPECT_EQ(data[0], 0x12);
+    response.setStatus(0x03);
+    EXPECT_EQ(testData[4], 0x03);
 }
 
 int main(int argc, char** argv)
