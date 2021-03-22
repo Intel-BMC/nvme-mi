@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 */
+#include "../protocol/admin/admin_cmd.hpp"
 #include "../protocol/mi/subsystem_hs_poll.hpp"
 #include "../protocol/mi_msg.hpp"
 #include "../protocol/mi_rsp.hpp"
@@ -331,6 +332,39 @@ TEST(SubsystemHealthStatusPoll, convertToCelsius)
     EXPECT_THROW(func(0x80), std::invalid_argument);
     EXPECT_THROW(func(0x81), std::invalid_argument);
     EXPECT_THROW(func(0xC4), std::invalid_argument);
+}
+
+TEST(AdminCommand, Create)
+{
+    namespace prot = nvmemi::protocol;
+    using AdminCmd = prot::AdminCommand<uint8_t*>;
+    std::vector<uint8_t> test(AdminCmd::minSize + sizeof(AdminCmd::CRC32C),
+                              0x00);
+    prot::AdminCommand msg(test, prot::AdminOpCode::identify);
+    EXPECT_ANY_THROW(prot::AdminCommand msg2(std::vector<uint8_t>(71, 0)));
+    EXPECT_NO_THROW(prot::AdminCommand msg2(std::vector<uint8_t>(72, 0)));
+
+    EXPECT_EQ(msg.getAdminOpCode(), prot::AdminOpCode::identify);
+    EXPECT_EQ(test[0], 0x84);
+    EXPECT_EQ(test[1], 0x10);
+    EXPECT_EQ(test[4], 0x06);
+    auto [data, len] = msg.getRequestData();
+    EXPECT_EQ(len, 0);
+    EXPECT_EQ(test[5], 0x00);
+    msg.setContainsLength(true);
+    EXPECT_EQ(test[5], 0x01);
+    msg.setContainsOffset(true);
+    EXPECT_EQ(test[5], 0x03);
+    msg.setLength(0x12345678);
+    EXPECT_EQ(test[32], 0x78);
+    EXPECT_EQ(test[33], 0x56);
+    EXPECT_EQ(test[34], 0x34);
+    EXPECT_EQ(test[35], 0x12);
+    msg.setOffset(0x12345678);
+    EXPECT_EQ(test[28], 0x78);
+    EXPECT_EQ(test[29], 0x56);
+    EXPECT_EQ(test[30], 0x34);
+    EXPECT_EQ(test[31], 0x12);
 }
 
 int main(int argc, char** argv)
