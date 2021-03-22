@@ -367,6 +367,47 @@ std::optional<nlohmann::json>
     return jsonObject;
 }
 
+std::string
+    getSubsystemHealthStatusPollResponse(mctpw::MCTPWrapper& wrapper,
+                                         mctpw::eid_t eid,
+                                         boost::asio::yield_context yield)
+{
+    using Request = nvmemi::protocol::ManagementInterfaceMessage<uint8_t*>;
+    std::vector<uint8_t> requestBuffer(
+        Request::minSize + sizeof(Request::CRC32C), 0x00);
+    Request msg(requestBuffer);
+    msg.setMiOpCode(nvmemi::protocol::MiOpCode::subsystemHealthStatusPoll);
+    auto dword1 =
+        reinterpret_cast<nvmemi::protocol::subsystemhs::RequestDWord1*>(
+            msg.getDWord1());
+    dword1->clearStatus = false;
+    msg.setCRC();
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("SubsystemHealthStatusPollResponse request " +
+         getHexString(requestBuffer.begin(), requestBuffer.end()))
+            .c_str());
+
+    auto [ec, response] =
+        wrapper.sendReceiveYield(yield, eid, requestBuffer, normalRespTimeout);
+    if (ec)
+    {
+        throw boost::system::system_error(ec);
+    }
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("SubsystemHealthStatusPollResponse response " +
+         getHexString(response.begin(), response.end()))
+            .c_str());
+
+    nvmemi::protocol::ManagementInterfaceResponse miRsp(response);
+    // TODO Check status code
+    auto [data, len] = miRsp.getOptionalResponseData();
+    if (len <= 0)
+    {
+        throw std::runtime_error("Optional data not found in response");
+    }
+    return getHexString(data, data + len);
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -473,6 +514,18 @@ std::tuple<int, std::string>
     {
         phosphor::logging::log<phosphor::logging::level::WARNING>(
             "Error getting controller hs poll",
+            phosphor::logging::entry("MSG=%s", e.what()));
+    }
+    try
+    {
+        auto subsystemHS = getSubsystemHealthStatusPollResponse(
+            *this->mctpWrapper, this->mctpEid, yield);
+        jsonObject["SubsystemHSPoll"] = subsystemHS;
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting subsystem hs poll",
             phosphor::logging::entry("MSG=%s", e.what()));
     }
 
