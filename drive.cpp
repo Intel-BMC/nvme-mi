@@ -408,6 +408,87 @@ std::string
     return getHexString(data, data + len);
 }
 
+std::vector<uint8_t> getNVMeMiResponseData(mctpw::MCTPWrapper& wrapper,
+                                           mctpw::eid_t eid,
+                                           boost::asio::yield_context yield,
+                                           const uint32_t dword0,
+                                           const uint32_t dword1 = 0)
+{
+    using Request = nvmemi::protocol::ManagementInterfaceMessage<uint8_t*>;
+    std::vector<uint8_t> requestBuffer(
+        Request::minSize + sizeof(Request::CRC32C), 0x00);
+    Request msg(requestBuffer, nvmemi::protocol::MiOpCode::configGet);
+    msg->dword0 = htole32(dword0);
+    msg->dword1 = htole32(dword1);
+    msg.setCRC();
+
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("getNVMeMiResponseData request " +
+         getHexString(requestBuffer.begin(), requestBuffer.end()))
+            .c_str());
+
+    auto [ec, response] =
+        wrapper.sendReceiveYield(yield, eid, requestBuffer, normalRespTimeout);
+    if (ec)
+    {
+        throw boost::system::system_error(ec);
+    }
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("getNVMeMiResponseData response " +
+         getHexString(response.begin(), response.end()))
+            .c_str());
+
+    nvmemi::protocol::ManagementInterfaceResponse miRsp(response);
+    if (miRsp.getStatus() != 0)
+    {
+        throw std::runtime_error("Received error response");
+    }
+
+    auto [data, len] = miRsp.getNVMeManagementResponse();
+    return std::vector<uint8_t>(data, data + len);
+}
+
+uint8_t getSMBusI2CFrequency(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                             boost::asio::yield_context yield, uint8_t portId)
+{
+    static constexpr uint8_t configGetSMBus = 0x01;
+    struct RequestDword
+    {
+        uint8_t cfgId;
+        uint16_t reserved;
+        uint8_t portId;
+    } __attribute__((packed));
+    uint32_t reqData = 0;
+    auto dword0 = reinterpret_cast<RequestDword*>(&reqData);
+    dword0->cfgId = configGetSMBus;
+    dword0->portId = portId;
+    auto data = getNVMeMiResponseData(wrapper, eid, yield, reqData);
+    return data[0] & 0xF;
+}
+
+uint16_t getMCTPTransportUnitSize(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                                  boost::asio::yield_context yield,
+                                  uint8_t portId)
+{
+    static constexpr uint8_t configGetMCTPUnit = 0x03;
+    struct RequestDword
+    {
+        uint8_t cfgId;
+        uint16_t reserved;
+        uint8_t portId;
+    } __attribute__((packed));
+    uint32_t reqData = 0;
+    auto dword0 = reinterpret_cast<RequestDword*>(&reqData);
+    dword0->cfgId = configGetMCTPUnit;
+    dword0->portId = portId;
+    auto data = getNVMeMiResponseData(wrapper, eid, yield, reqData);
+    auto mctpUnitSize = reinterpret_cast<uint16_t*>(data.data());
+
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("MCTPUnit response " + getHexString(data.begin(), data.end()))
+            .c_str());
+    return le16toh(*mctpUnitSize);
+}
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -440,10 +521,9 @@ std::tuple<int, std::string>
     }
     if (subsystemInfo)
     {
-        uint8_t currentPort = 0;
         nlohmann::json portInfoJson;
-        for (currentPort = 0; currentPort <= subsystemInfo->numberOfPorts;
-             currentPort++)
+        for (uint8_t currentPort = 0;
+             currentPort <= subsystemInfo->numberOfPorts; currentPort++)
         {
             auto portInfo = getPortInfo(*this->mctpWrapper, this->mctpEid,
                                         currentPort, yield);
@@ -527,6 +607,33 @@ std::tuple<int, std::string>
         phosphor::logging::log<phosphor::logging::level::WARNING>(
             "Error getting subsystem hs poll",
             phosphor::logging::entry("MSG=%s", e.what()));
+    }
+    if (subsystemInfo)
+    {
+        nlohmann::json portInfoJson;
+        for (uint8_t currentPort = 0;
+             currentPort <= subsystemInfo->numberOfPorts; currentPort++)
+        {
+            try
+            {
+                nlohmann::json configGetJson;
+                uint8_t i2cFreq = getSMBusI2CFrequency(
+                    *this->mctpWrapper, this->mctpEid, yield, currentPort);
+                configGetJson["I2C_SMBus_Frequency"] = i2cFreq;
+                uint8_t mctpUnitSize = getMCTPTransportUnitSize(
+                    *this->mctpWrapper, this->mctpEid, yield, currentPort);
+                configGetJson["MCTP_Unit_Size"] = mctpUnitSize;
+                portInfoJson["Port" + std::to_string(currentPort)] =
+                    configGetJson;
+            }
+            catch (const std::exception& e)
+            {
+                phosphor::logging::log<phosphor::logging::level::WARNING>(
+                    "Error getting config get response",
+                    phosphor::logging::entry("MSG=%s", e.what()));
+            }
+        }
+        jsonObject["ConfigGet"] = portInfoJson;
     }
 
     if (jsonObject.empty())

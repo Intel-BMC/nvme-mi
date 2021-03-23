@@ -29,7 +29,7 @@ using NVMeManagementResponse = uint8_t[3];
 
 template <>
 class ManagementInterfaceResponse<const uint8_t*>
-    : public NVMeResponse<const uint8_t*>
+    : public virtual NVMeResponse<const uint8_t*>
 {
   public:
     static constexpr size_t minSize =
@@ -74,7 +74,7 @@ class ManagementInterfaceResponse<const uint8_t*>
 template <>
 class ManagementInterfaceResponse<uint8_t*>
     : public ManagementInterfaceResponse<const uint8_t*>,
-      public NVMeResponse<uint8_t*>
+      public virtual NVMeResponse<uint8_t*>
 {
   public:
     ManagementInterfaceResponse(uint8_t* data, size_t len) :
