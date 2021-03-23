@@ -17,6 +17,9 @@
 #include "drive.hpp"
 
 #include "constants.hpp"
+#include "protocol/admin/admin_cmd.hpp"
+#include "protocol/admin/admin_rsp.hpp"
+#include "protocol/admin/feature_id.hpp"
 #include "protocol/mi/controller_hs_poll.hpp"
 #include "protocol/mi/read_nvmemi_ds.hpp"
 #include "protocol/mi/subsystem_hs_poll.hpp"
@@ -489,6 +492,109 @@ uint16_t getMCTPTransportUnitSize(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
             .c_str());
     return le16toh(*mctpUnitSize);
 }
+
+uint32_t getAdminGetFeaturesCQDWord0(mctpw::MCTPWrapper& wrapper,
+                                     mctpw::eid_t eid,
+                                     boost::asio::yield_context yield,
+                                     nvmemi::protocol::FeatureID feature,
+                                     uint32_t dword11 = 0)
+{
+    static constexpr uint32_t namespaceId = 0xFFFFFFFF;
+    static constexpr uint8_t selectCurrent = 0x00;
+    using Request = nvmemi::protocol::AdminCommand<uint8_t*>;
+    std::vector<uint8_t> requestBuffer(
+        Request::minSize + sizeof(Request::CRC32C), 0x00);
+    Request msg(requestBuffer);
+    msg.setAdminOpCode(nvmemi::protocol::AdminOpCode::getFeatures);
+    struct DWord10
+    {
+        uint8_t featureId;
+        uint8_t select : 3;
+        uint32_t reserved : 21;
+    } __attribute__((packed));
+    auto dwordPtr = reinterpret_cast<DWord10*>(msg.getSQDword10());
+    dwordPtr->featureId = static_cast<uint8_t>(feature);
+    dwordPtr->select = selectCurrent;
+    msg->sqdword1 = htole32(namespaceId);
+    msg->sqdword11 = htole32(dword11);
+    msg.setCRC();
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("getAdminGetFeaturesCQDWord0 request " +
+         getHexString(requestBuffer.begin(), requestBuffer.end()))
+            .c_str());
+
+    auto [ec, response] = wrapper.sendReceiveYield(
+        yield, eid, requestBuffer, std::chrono::milliseconds(600));
+    if (ec)
+    {
+        throw boost::system::system_error(ec);
+    }
+    phosphor::logging::log<phosphor::logging::level::DEBUG>(
+        ("getAdminGetFeaturesCQDWord0 response " +
+         getHexString(response.begin(), response.end()))
+            .c_str());
+
+    nvmemi::protocol::AdminCommandResponse adminRsp(response);
+    if (adminRsp.getStatus() != 0)
+    {
+        throw std::runtime_error("Error status set in response message");
+    }
+    return adminRsp->cqdword0;
+}
+
+std::optional<std::string>
+    getFeatureArbitration(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                          boost::asio::yield_context yield)
+{
+    try
+    {
+        auto dword0 = getAdminGetFeaturesCQDWord0(
+            wrapper, eid, yield, nvmemi::protocol::FeatureID::arbitration);
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::setfill('0') << std::setw(8) << dword0;
+        return ss.str();
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting arbitration information",
+            phosphor::logging::entry("MSG=%s", e.what()));
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string> getFeatureTemperatureThreshold(
+    mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+    boost::asio::yield_context yield, bool over = true)
+{
+    struct DWord11
+    {
+        uint16_t temperatureThreshold;
+        uint8_t temperatureSelect : 4;
+        uint8_t typeSelect : 2;
+        uint16_t reserved : 10;
+    } __attribute__((packed));
+    try
+    {
+        uint32_t dword11Val = 0;
+        auto dword11Ptr = reinterpret_cast<DWord11*>(&dword11Val);
+        dword11Ptr->typeSelect = over ? 0 : 1;
+        auto dword0 = getAdminGetFeaturesCQDWord0(
+            wrapper, eid, yield,
+            nvmemi::protocol::FeatureID::temperatureThreshold, dword11Val);
+        std::stringstream ss;
+        ss << "0x" << std::hex << std::setfill('0') << std::setw(8) << dword0;
+        return ss.str();
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting arbitration information",
+            phosphor::logging::entry("MSG=%s", e.what()));
+        return std::nullopt;
+    }
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -635,6 +741,26 @@ std::tuple<int, std::string>
         }
         jsonObject["ConfigGet"] = portInfoJson;
     }
+    nlohmann::json getFeaturesJson;
+    auto arbitration =
+        getFeatureArbitration(*this->mctpWrapper, this->mctpEid, yield);
+    if (arbitration)
+    {
+        getFeaturesJson["Arbitration"] = arbitration.value();
+    }
+    auto tempThresholdUpper = getFeatureTemperatureThreshold(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (tempThresholdUpper)
+    {
+        getFeaturesJson["ThresholdUpper"] = tempThresholdUpper.value();
+    }
+    auto tempThresholdLower = getFeatureTemperatureThreshold(
+        *this->mctpWrapper, this->mctpEid, yield, false);
+    if (tempThresholdLower)
+    {
+        getFeaturesJson["ThresholdLower"] = tempThresholdLower.value();
+    }
+    jsonObject["GetFeatures"] = getFeaturesJson;
 
     if (jsonObject.empty())
     {

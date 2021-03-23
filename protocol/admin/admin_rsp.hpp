@@ -25,7 +25,8 @@ template <typename T>
 class AdminCommandResponse;
 
 template <>
-class AdminCommandResponse<const uint8_t*> : public NVMeResponse<const uint8_t*>
+class AdminCommandResponse<const uint8_t*>
+    : public virtual NVMeResponse<const uint8_t*>
 {
   protected:
     struct ResponseData
@@ -62,9 +63,9 @@ class AdminCommandResponse<const uint8_t*> : public NVMeResponse<const uint8_t*>
                                   sizeof(ResponseData),
                               size - (minSize + sizeof(CRC32C)));
     }
-    constexpr uint8_t getStatus() const noexcept
+    const ResponseData* operator->()
     {
-        return buffer->status;
+        return buffer;
     }
 
   private:
@@ -73,7 +74,8 @@ class AdminCommandResponse<const uint8_t*> : public NVMeResponse<const uint8_t*>
 
 template <>
 class AdminCommandResponse<uint8_t*>
-    : public AdminCommandResponse<const uint8_t*>, public NVMeResponse<uint8_t*>
+    : public AdminCommandResponse<const uint8_t*>,
+      public virtual NVMeResponse<uint8_t*>
 {
   public:
     AdminCommandResponse(uint8_t* data, size_t len) :
@@ -88,9 +90,9 @@ class AdminCommandResponse<uint8_t*>
     AdminCommandResponse(T&& arr) : AdminCommandResponse(arr.data(), arr.size())
     {
     }
-    constexpr void setStatus(uint8_t status) noexcept
+    ResponseData* operator->()
     {
-        this->buffer->status = status;
+        return buffer;
     }
 
   private:

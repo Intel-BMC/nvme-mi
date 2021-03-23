@@ -379,8 +379,6 @@ TEST(AdminCommandResponse, Create)
     auto [data, len] = response.getResponseData();
     EXPECT_EQ(len, 2);
     EXPECT_EQ(data[0], 0x12);
-    response.setStatus(0x03);
-    EXPECT_EQ(testData[4], 0x03);
 }
 
 int main(int argc, char** argv)
