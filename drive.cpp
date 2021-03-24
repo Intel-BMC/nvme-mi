@@ -20,6 +20,7 @@
 #include "protocol/admin/admin_cmd.hpp"
 #include "protocol/admin/admin_rsp.hpp"
 #include "protocol/admin/feature_id.hpp"
+#include "protocol/admin/get_log_page.hpp"
 #include "protocol/mi/controller_hs_poll.hpp"
 #include "protocol/mi/read_nvmemi_ds.hpp"
 #include "protocol/mi/subsystem_hs_poll.hpp"
@@ -591,6 +592,232 @@ std::optional<std::string> getFeatureTemperatureThreshold(
         wrapper, eid, yield, dword11Val);
 }
 
+std::optional<std::string>
+    getLogPageResponse(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                       boost::asio::yield_context yield,
+                       nvmemi::protocol::getlog::LogPage logPageId,
+                       uint32_t expectedBytes, uint64_t offset = 0)
+{
+    try
+    {
+        constexpr auto logPageTimeout = std::chrono::milliseconds(3000);
+        using LogPageRequest = nvmemi::protocol::getlog::Request;
+        static constexpr uint32_t namespaceId = 0xFFFFFFFF;
+        using Request = nvmemi::protocol::AdminCommand<uint8_t*>;
+        std::vector<uint8_t> requestBuffer(
+            Request::minSize + sizeof(Request::CRC32C), 0x00);
+        Request msg(requestBuffer);
+        msg.setAdminOpCode(nvmemi::protocol::AdminOpCode::getLogPage);
+        msg.setContainsLength(true);
+        msg.setLength(expectedBytes);
+
+        auto dwordPtr = reinterpret_cast<LogPageRequest*>(msg.getSQDword10());
+        dwordPtr->logPageId = static_cast<uint8_t>(logPageId);
+        dwordPtr->numberOfDwords = htole32(expectedBytes / sizeof(uint32_t));
+        dwordPtr->logPageOffset = htole64(offset);
+        msg->sqdword1 = htole32(namespaceId);
+        msg.setCRC();
+
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("getLogPageResponse request " +
+             getHexString(requestBuffer.begin(), requestBuffer.end()))
+                .c_str());
+
+        auto [ec, response] =
+            wrapper.sendReceiveYield(yield, eid, requestBuffer, logPageTimeout);
+        if (ec)
+        {
+            throw boost::system::system_error(ec);
+        }
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("getLogPageResponse response " +
+             getHexString(response.begin(), response.end()))
+                .c_str());
+
+        nvmemi::protocol::AdminCommandResponse adminRsp(response);
+        if (adminRsp.getStatus() != 0)
+        {
+            throw std::runtime_error("Error status set in response message");
+        }
+        auto [data, len] = adminRsp.getAdminResponseData();
+        if (len <= 0)
+        {
+            throw std::runtime_error("No data in admin response");
+        }
+        return getHexString(data, data + len);
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting response for get log page",
+            phosphor::logging::entry("MSG=%s", e.what()),
+            phosphor::logging::entry("LID=%d", logPageId));
+        return std::nullopt;
+    }
+}
+
+std::optional<std::string> getLogPageError(mctpw::MCTPWrapper& wrapper,
+                                           mctpw::eid_t eid,
+                                           boost::asio::yield_context yield)
+{
+    static constexpr size_t singleErrorPageSize = 64;
+    static constexpr size_t errorPages = 2;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::errorInformation,
+        (errorPages * singleErrorPageSize));
+}
+std::optional<std::string>
+    getLogPageSMARTHealth(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                          boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 512;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::smartHealthInformation,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPageFirmwareSlotInfo(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                               boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 512;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::firmwareSlotInformation,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPageChangedNamespaces(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                                boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 1024;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::changedNamespaceList, responseSize);
+}
+std::optional<std::string>
+    getLogPageCmdSupportedAndEffects(mctpw::MCTPWrapper& wrapper,
+                                     mctpw::eid_t eid,
+                                     boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 2048;
+    size_t offset = 0;
+    auto rsp1 = getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::commandsSupportedEffects,
+        responseSize);
+    if (rsp1)
+    {
+        offset += 2048;
+        auto rsp2 = getLogPageResponse(
+            wrapper, eid, yield,
+            nvmemi::protocol::getlog::LogPage::commandsSupportedEffects,
+            responseSize, offset);
+        if (rsp2)
+        {
+            return rsp1.value() + rsp2.value();
+        }
+    }
+    return std::nullopt;
+}
+std::optional<std::string>
+    getLogPageDeviceSelfTest(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                             boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 564;
+    return getLogPageResponse(wrapper, eid, yield,
+                              nvmemi::protocol::getlog::LogPage::deviceSelfTest,
+                              responseSize);
+}
+std::optional<std::string>
+    getLogPageTelemetryHostInitiated(mctpw::MCTPWrapper& wrapper,
+                                     mctpw::eid_t eid,
+                                     boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 2048;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::telemetryHostInitiated,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPageTelemetryControllerInitiated(mctpw::MCTPWrapper& wrapper,
+                                           mctpw::eid_t eid,
+                                           boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 2048;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::telemetryControllerInitiated,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPageEnduranceGroupInformation(mctpw::MCTPWrapper& wrapper,
+                                        mctpw::eid_t eid,
+                                        boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 512;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::enduranceGroupInformation,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPagePredictableLatencyPerNVMSet(mctpw::MCTPWrapper& wrapper,
+                                          mctpw::eid_t eid,
+                                          boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 512;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::predictableLatencyPerNVMSet,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPagePredictableLatencyEventAggregate(mctpw::MCTPWrapper& wrapper,
+                                               mctpw::eid_t eid,
+                                               boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 1024;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::predictableLatencyEventAggregate,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPageAsymmetricNamespaceAccess(mctpw::MCTPWrapper& wrapper,
+                                        mctpw::eid_t eid,
+                                        boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 1024;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::asymmetricNamespaceAccess,
+        responseSize);
+}
+std::optional<std::string>
+    getLogPagePersistentEventLog(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                                 boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 1024;
+    // TODO Handle Log Specific Field
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::persistentEventLog, responseSize);
+}
+std::optional<std::string>
+    getLogPageEnduranceGroupEventAggregate(mctpw::MCTPWrapper& wrapper,
+                                           mctpw::eid_t eid,
+                                           boost::asio::yield_context yield)
+{
+    static constexpr size_t responseSize = 1024;
+    return getLogPageResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::getlog::LogPage::enduranceGroupEventAggregate,
+        responseSize);
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -807,6 +1034,102 @@ std::tuple<int, std::string>
         getFeaturesJson["AsyncEventConfig"] = asyncEventConfig.value();
     }
     jsonObject["GetFeatures"] = getFeaturesJson;
+
+    nlohmann::json getLogPage;
+    auto logErr = getLogPageError(*this->mctpWrapper, this->mctpEid, yield);
+    if (logErr)
+    {
+        getLogPage["Error"] = logErr.value();
+    }
+    auto logSmartHealth =
+        getLogPageSMARTHealth(*this->mctpWrapper, this->mctpEid, yield);
+    if (logSmartHealth)
+    {
+        getLogPage["SMARTHealth"] = logSmartHealth.value();
+    }
+    auto logFirmwareSlot =
+        getLogPageFirmwareSlotInfo(*this->mctpWrapper, this->mctpEid, yield);
+    if (logFirmwareSlot)
+    {
+        getLogPage["FirmwareSlot"] = logFirmwareSlot.value();
+    }
+    auto logChangedNamespace =
+        getLogPageChangedNamespaces(*this->mctpWrapper, this->mctpEid, yield);
+    if (logChangedNamespace)
+    {
+        getLogPage["ChangedNamespaces"] = logChangedNamespace.value();
+    }
+    auto logCommandSUpported = getLogPageCmdSupportedAndEffects(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (logCommandSUpported)
+    {
+        getLogPage["CommandSupported"] = logCommandSUpported.value();
+    }
+    auto logDeviceSelfTest =
+        getLogPageDeviceSelfTest(*this->mctpWrapper, this->mctpEid, yield);
+    if (logDeviceSelfTest)
+    {
+        getLogPage["DeviceSelfTest"] = logDeviceSelfTest.value();
+    }
+    auto logTelemetryHostInitiated = getLogPageTelemetryHostInitiated(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (logTelemetryHostInitiated)
+    {
+        getLogPage["TelemetryHostInitiated"] =
+            logTelemetryHostInitiated.value();
+    }
+    auto logTelemetryControllerInitiated =
+        getLogPageTelemetryControllerInitiated(*this->mctpWrapper,
+                                               this->mctpEid, yield);
+    if (logTelemetryControllerInitiated)
+    {
+        getLogPage["TelemetryControllerInitiated"] =
+            logTelemetryControllerInitiated.value();
+    }
+    auto logEnduranceGroupInformation = getLogPageEnduranceGroupInformation(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (logEnduranceGroupInformation)
+    {
+        getLogPage["EnduranceGroupInformation"] =
+            logEnduranceGroupInformation.value();
+    }
+    auto logPredictableLatencyPerNVMSet = getLogPagePredictableLatencyPerNVMSet(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (logPredictableLatencyPerNVMSet)
+    {
+        getLogPage["PredictableLatencyPerNVMSet"] =
+            logPredictableLatencyPerNVMSet.value();
+    }
+    auto logPredictableLatencyEventAggregate =
+        getLogPagePredictableLatencyEventAggregate(*this->mctpWrapper,
+                                                   this->mctpEid, yield);
+    if (logPredictableLatencyEventAggregate)
+    {
+        getLogPage["PredictableLatencyEventAggregate"] =
+            logPredictableLatencyEventAggregate.value();
+    }
+    auto logAsymmetricNamespaceAccess = getLogPageAsymmetricNamespaceAccess(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (logAsymmetricNamespaceAccess)
+    {
+        getLogPage["AsymmetricNamespaceAccess"] =
+            logAsymmetricNamespaceAccess.value();
+    }
+    auto logPersistentEventLog =
+        getLogPagePersistentEventLog(*this->mctpWrapper, this->mctpEid, yield);
+    if (logPersistentEventLog)
+    {
+        getLogPage["PersistentEventLog"] = logPersistentEventLog.value();
+    }
+    auto logEnduranceGroupEventAggregate =
+        getLogPageEnduranceGroupEventAggregate(*this->mctpWrapper,
+                                               this->mctpEid, yield);
+    if (logEnduranceGroupEventAggregate)
+    {
+        getLogPage["EnduranceGroupEventAggregate"] =
+            logEnduranceGroupEventAggregate.value();
+    }
+    jsonObject["GetLogPage"] = getLogPage;
 
     if (jsonObject.empty())
     {

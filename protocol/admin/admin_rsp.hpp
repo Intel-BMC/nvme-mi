@@ -63,9 +63,15 @@ class AdminCommandResponse<const uint8_t*>
                                   sizeof(ResponseData),
                               size - (minSize + sizeof(CRC32C)));
     }
-    const ResponseData* operator->()
+    const ResponseData* operator->() const
     {
         return buffer;
+    }
+    std::pair<const uint8_t*, ssize_t> getAdminResponseData() const noexcept
+    {
+        return std::make_pair(reinterpret_cast<const uint8_t*>(buffer) +
+                                  sizeof(ResponseData),
+                              (size - minSize - sizeof(CRC32C)));
     }
 
   private:
