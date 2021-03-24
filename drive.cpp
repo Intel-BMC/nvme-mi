@@ -542,23 +542,32 @@ uint32_t getAdminGetFeaturesCQDWord0(mctpw::MCTPWrapper& wrapper,
     return adminRsp->cqdword0;
 }
 
+template <typename T>
+std::string getHexString(const T& val, size_t width = sizeof(T) * 2,
+                         char fill = '0')
+{
+    std::stringstream ss;
+    ss << "0x" << std::hex << std::setfill(fill) << std::setw(width) << val;
+    return ss.str();
+}
+
+template <nvmemi::protocol::FeatureID feature>
 std::optional<std::string>
-    getFeatureArbitration(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
-                          boost::asio::yield_context yield)
+    getFeatureString(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                     boost::asio::yield_context yield, uint32_t dword11 = 0)
 {
     try
     {
-        auto dword0 = getAdminGetFeaturesCQDWord0(
-            wrapper, eid, yield, nvmemi::protocol::FeatureID::arbitration);
-        std::stringstream ss;
-        ss << "0x" << std::hex << std::setfill('0') << std::setw(8) << dword0;
-        return ss.str();
+        auto dword0 =
+            getAdminGetFeaturesCQDWord0(wrapper, eid, yield, feature, dword11);
+        return getHexString(dword0);
     }
     catch (const std::exception& e)
     {
         phosphor::logging::log<phosphor::logging::level::WARNING>(
-            "Error getting arbitration information",
-            phosphor::logging::entry("MSG=%s", e.what()));
+            "Error getting response for get feature",
+            phosphor::logging::entry("MSG=%s", e.what()),
+            phosphor::logging::entry("FID=%d", feature));
         return std::nullopt;
     }
 }
@@ -574,25 +583,12 @@ std::optional<std::string> getFeatureTemperatureThreshold(
         uint8_t typeSelect : 2;
         uint16_t reserved : 10;
     } __attribute__((packed));
-    try
-    {
-        uint32_t dword11Val = 0;
-        auto dword11Ptr = reinterpret_cast<DWord11*>(&dword11Val);
-        dword11Ptr->typeSelect = over ? 0 : 1;
-        auto dword0 = getAdminGetFeaturesCQDWord0(
-            wrapper, eid, yield,
-            nvmemi::protocol::FeatureID::temperatureThreshold, dword11Val);
-        std::stringstream ss;
-        ss << "0x" << std::hex << std::setfill('0') << std::setw(8) << dword0;
-        return ss.str();
-    }
-    catch (const std::exception& e)
-    {
-        phosphor::logging::log<phosphor::logging::level::WARNING>(
-            "Error getting arbitration information",
-            phosphor::logging::entry("MSG=%s", e.what()));
-        return std::nullopt;
-    }
+
+    uint32_t dword11Val = 0;
+    auto dword11Ptr = reinterpret_cast<DWord11*>(&dword11Val);
+    dword11Ptr->typeSelect = over ? 0 : 1;
+    return getFeatureString<nvmemi::protocol::FeatureID::temperatureThreshold>(
+        wrapper, eid, yield, dword11Val);
 }
 
 std::tuple<int, std::string>
@@ -743,13 +739,15 @@ std::tuple<int, std::string>
     }
     nlohmann::json getFeaturesJson;
     auto arbitration =
-        getFeatureArbitration(*this->mctpWrapper, this->mctpEid, yield);
+        getFeatureString<nvmemi::protocol::FeatureID::arbitration>(
+            *this->mctpWrapper, this->mctpEid, yield);
     if (arbitration)
     {
         getFeaturesJson["Arbitration"] = arbitration.value();
     }
-    auto tempThresholdUpper = getFeatureTemperatureThreshold(
-        *this->mctpWrapper, this->mctpEid, yield);
+    auto tempThresholdUpper =
+        getFeatureString<nvmemi::protocol::FeatureID::arbitration>(
+            *this->mctpWrapper, this->mctpEid, yield);
     if (tempThresholdUpper)
     {
         getFeaturesJson["ThresholdUpper"] = tempThresholdUpper.value();
@@ -759,6 +757,54 @@ std::tuple<int, std::string>
     if (tempThresholdLower)
     {
         getFeaturesJson["ThresholdLower"] = tempThresholdLower.value();
+    }
+    auto powerFeature = getFeatureString<nvmemi::protocol::FeatureID::power>(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (powerFeature)
+    {
+        getFeaturesJson["Power"] = powerFeature.value();
+    }
+    auto errorRecovery =
+        getFeatureString<nvmemi::protocol::FeatureID::errorRecovery>(
+            *this->mctpWrapper, this->mctpEid, yield);
+    if (errorRecovery)
+    {
+        getFeaturesJson["ErrorRecovery"] = errorRecovery.value();
+    }
+    auto numberOfQueues =
+        getFeatureString<nvmemi::protocol::FeatureID::numberOfQueues>(
+            *this->mctpWrapper, this->mctpEid, yield);
+    if (numberOfQueues)
+    {
+        getFeaturesJson["NumberOfQueues"] = numberOfQueues.value();
+    }
+    auto interruptCoalescing =
+        getFeatureString<nvmemi::protocol::FeatureID::interruptCoalescing>(
+            *this->mctpWrapper, this->mctpEid, yield);
+    if (interruptCoalescing)
+    {
+        getFeaturesJson["InterruptCoalescing"] = interruptCoalescing.value();
+    }
+    auto interruptVector = getFeatureString<
+        nvmemi::protocol::FeatureID::interruptVectorConfiguration>(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (interruptVector)
+    {
+        getFeaturesJson["InterruptVector"] = interruptVector.value();
+    }
+    auto writeAtomicity =
+        getFeatureString<nvmemi::protocol::FeatureID::writeAtomicityNormal>(
+            *this->mctpWrapper, this->mctpEid, yield);
+    if (writeAtomicity)
+    {
+        getFeaturesJson["WriteAtomicity"] = writeAtomicity.value();
+    }
+    auto asyncEventConfig = getFeatureString<
+        nvmemi::protocol::FeatureID::asynchronousEventConfiguration>(
+        *this->mctpWrapper, this->mctpEid, yield);
+    if (asyncEventConfig)
+    {
+        getFeaturesJson["AsyncEventConfig"] = asyncEventConfig.value();
     }
     jsonObject["GetFeatures"] = getFeaturesJson;
 
