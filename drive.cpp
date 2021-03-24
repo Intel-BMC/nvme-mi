@@ -21,6 +21,7 @@
 #include "protocol/admin/admin_rsp.hpp"
 #include "protocol/admin/feature_id.hpp"
 #include "protocol/admin/get_log_page.hpp"
+#include "protocol/admin/identify.hpp"
 #include "protocol/mi/controller_hs_poll.hpp"
 #include "protocol/mi/read_nvmemi_ds.hpp"
 #include "protocol/mi/subsystem_hs_poll.hpp"
@@ -39,6 +40,8 @@ using DataStructureType = nvmemi::protocol::readnvmeds::DataStructureType;
 static constexpr double nvmeTemperatureMin = -60.0;
 static constexpr double nvmeTemperatureMax = 127.0;
 static const std::chrono::milliseconds normalRespTimeout{600};
+static const std::chrono::milliseconds longRespTimeout{3000};
+static constexpr uint32_t globalNamespaceId = 0xFFFFFFFF;
 
 static std::vector<Threshold> getDefaultThresholds()
 {
@@ -609,6 +612,11 @@ std::optional<std::string>
         Request msg(requestBuffer);
         msg.setAdminOpCode(nvmemi::protocol::AdminOpCode::getLogPage);
         msg.setContainsLength(true);
+        if (offset > 0)
+        {
+            msg.setContainsOffset(true);
+            msg.setOffset(offset);
+        }
         msg.setLength(expectedBytes);
 
         auto dwordPtr = reinterpret_cast<LogPageRequest*>(msg.getSQDword10());
@@ -818,6 +826,144 @@ std::optional<std::string>
         responseSize);
 }
 
+std::optional<std::string> getIdentifyResponse(
+    mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+    boost::asio::yield_context yield,
+    nvmemi::protocol::identify::ControllerNamespaceStruct cns,
+    uint32_t expectedBytes, uint32_t namespaceId, uint16_t controllerId = 0,
+    uint32_t offset = 0)
+{
+    try
+    {
+        using DWord10 = nvmemi::protocol::identify::DWord10;
+        using Request = nvmemi::protocol::AdminCommand<uint8_t*>;
+        std::vector<uint8_t> requestBuffer(
+            Request::minSize + sizeof(Request::CRC32C), 0x00);
+        Request msg(requestBuffer);
+        msg.setAdminOpCode(nvmemi::protocol::AdminOpCode::identify);
+        msg.setContainsLength(true);
+        if (offset > 0)
+        {
+            msg.setContainsOffset(true);
+            msg.setOffset(offset);
+        }
+        msg.setLength(expectedBytes);
+
+        auto dword10Ptr = reinterpret_cast<DWord10*>(msg.getSQDword10());
+        dword10Ptr->cns = static_cast<uint8_t>(cns);
+        dword10Ptr->controllerId = htole16(controllerId);
+        msg->sqdword1 = htole32(namespaceId);
+        msg.setCRC();
+
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("Identify request " +
+             getHexString(requestBuffer.begin(), requestBuffer.end()))
+                .c_str());
+
+        auto [ec, response] = wrapper.sendReceiveYield(
+            yield, eid, requestBuffer, longRespTimeout);
+        if (ec)
+        {
+            throw boost::system::system_error(ec);
+        }
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("Identify response " +
+             getHexString(response.begin(), response.end()))
+                .c_str());
+
+        nvmemi::protocol::AdminCommandResponse adminRsp(response);
+        if (adminRsp.getStatus() != 0)
+        {
+            throw std::runtime_error("Error status set in response message");
+        }
+        auto [data, len] = adminRsp.getAdminResponseData();
+        if (len <= 0)
+        {
+            throw std::runtime_error("No data in admin response");
+        }
+        return getHexString(data, data + len);
+    }
+    catch (const std::exception& e)
+    {
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Error getting response for identify page",
+            phosphor::logging::entry("MSG=%s", e.what()),
+            phosphor::logging::entry("CNS=%d", cns));
+        return std::nullopt;
+    }
+}
+
+std::vector<uint32_t>
+    getIdentifyActiveNamespaceIdList(mctpw::MCTPWrapper& wrapper,
+                                     mctpw::eid_t eid,
+                                     boost::asio::yield_context yield)
+{
+    static constexpr uint16_t maxNamespacesExpected = 256;
+    static constexpr uint16_t bytesExpected =
+        maxNamespacesExpected * sizeof(uint32_t);
+    std::vector<uint32_t> nsIds;
+    auto rsp = getIdentifyResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::identify::ControllerNamespaceStruct::activeNamespace,
+        bytesExpected, 0);
+    // TODO Continue processing if max namespaces returned
+    std::stringstream ss;
+    if (rsp)
+    {
+        ss << std::hex << rsp.value();
+        while (!ss.eof())
+        {
+            uint8_t b1, b2, b3, b4;
+            ss >> b1 >> b2 >> b3 >> b4;
+            uint32_t nsId = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24);
+            if (nsId == 0)
+            {
+                break;
+            }
+            nsIds.emplace_back(nsId);
+        }
+    }
+    return nsIds;
+}
+
+std::optional<std::string>
+    getIdentifyController(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                          boost::asio::yield_context yield,
+                          uint16_t controllerId)
+{
+    static constexpr uint16_t controllerInfoSize = 536;
+    return getIdentifyResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::identify::ControllerNamespaceStruct::
+            controllerIdentify,
+        controllerInfoSize, globalNamespaceId, controllerId);
+}
+
+std::optional<std::string>
+    getIdentifyCommonNamespace(mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+                               boost::asio::yield_context yield)
+{
+    static constexpr uint16_t namespaceDescriptorSize = 256;
+    return getIdentifyResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::identify::ControllerNamespaceStruct::
+            namespaceCapablities,
+        namespaceDescriptorSize, globalNamespaceId);
+}
+
+std::optional<std::string> getIdentifyNamespaceIdDescList(
+    mctpw::MCTPWrapper& wrapper, mctpw::eid_t eid,
+    boost::asio::yield_context yield, uint32_t nsId)
+{
+    static constexpr uint16_t bytesExpected = 1024;
+    // TODO Handle namespace count greater than 256
+    return getIdentifyResponse(
+        wrapper, eid, yield,
+        nvmemi::protocol::identify::ControllerNamespaceStruct::
+            namespaceIdDescriptorList,
+        bytesExpected, nsId);
+}
+
 std::tuple<int, std::string>
     Drive::collectDriveLog(boost::asio::yield_context yield)
 {
@@ -865,10 +1011,12 @@ std::tuple<int, std::string>
         }
         jsonObject["Ports"] = portInfoJson;
     }
+    std::optional<std::vector<uint16_t>> controllerIds;
     try
     {
         auto controllerList =
             getControllerList(*this->mctpWrapper, this->mctpEid, yield);
+        controllerIds = controllerList;
         jsonObject["Controllers"] = controllerList;
         nlohmann::json controllerInfoJson;
         for (uint16_t controllerId : controllerList)
@@ -1130,6 +1278,44 @@ std::tuple<int, std::string>
             logEnduranceGroupEventAggregate.value();
     }
     jsonObject["GetLogPage"] = getLogPage;
+
+    nlohmann::json identifyJson;
+    auto activeNamespaces = getIdentifyActiveNamespaceIdList(
+        *this->mctpWrapper, this->mctpEid, yield);
+    identifyJson["ActiveNamespaces"] = activeNamespaces;
+    nlohmann::json namespaceJson;
+    for (auto nsId : activeNamespaces)
+    {
+        auto rsp = getIdentifyNamespaceIdDescList(*this->mctpWrapper,
+                                                  this->mctpEid, yield, nsId);
+        if (rsp)
+        {
+            namespaceJson["Namespace" + std::to_string(nsId)] = rsp.value();
+        }
+    }
+    identifyJson["NamespaceIdDescList"] = namespaceJson;
+    nlohmann::json controllerIdentify;
+    if (controllerIds.has_value())
+    {
+        for (auto cntrlId : controllerIds.value())
+        {
+            auto rsp = getIdentifyController(*this->mctpWrapper, this->mctpEid,
+                                             yield, cntrlId);
+            if (rsp)
+            {
+                controllerIdentify["Controller" + std::to_string(cntrlId)] =
+                    rsp.value();
+            }
+        }
+        identifyJson["Controllers"] = controllerIdentify;
+    }
+    auto namespaceCapablity =
+        getIdentifyCommonNamespace(*this->mctpWrapper, this->mctpEid, yield);
+    if (namespaceCapablity)
+    {
+        identifyJson["CommonNamespaceCapablity"] = namespaceCapablity.value();
+    }
+    jsonObject["Identify"] = identifyJson;
 
     if (jsonObject.empty())
     {
