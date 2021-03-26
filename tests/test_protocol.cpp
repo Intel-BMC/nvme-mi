@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 */
+#include "../protocol/mi/subsystem_hs_poll.hpp"
 #include "../protocol/mi_msg.hpp"
 #include "../protocol/mi_rsp.hpp"
 #include "../protocol/nvme_msg.hpp"
@@ -294,6 +295,44 @@ TEST(ManagementIntgerfaceResponse, GetSet)
         }
     } // namespace nvmemi::protocol;
 }
+
+TEST(SubsystemHealthStatusPoll, Struct)
+{
+    using Request = nvmemi::protocol::subsystemhs::RequestDWord1;
+    using Response = nvmemi::protocol::subsystemhs::ResponseData;
+    uint8_t reqData[] = {0, 0, 0, 0};
+    auto reqPtr = reinterpret_cast<Request*>(reqData);
+    reqPtr->clearStatus = true;
+    EXPECT_EQ(reqData[3], 0x80);
+    reqData[3] = 0xFF;
+    reqPtr->clearStatus = false;
+    EXPECT_EQ(reqData[3], 0x7F);
+
+    std::array<uint8_t, 8> respData{};
+    constexpr uint8_t temperature = 0x12;
+    respData[2] = temperature;
+    auto respPtr = reinterpret_cast<Response*>(respData.data());
+    EXPECT_EQ(respPtr->cTemp, temperature);
+    respPtr->cTemp = temperature + 1;
+    EXPECT_EQ(respData[2], temperature + 1);
+}
+
+TEST(SubsystemHealthStatusPoll, convertToCelsius)
+{
+    namespace prot = nvmemi::protocol;
+    auto func = nvmemi::protocol::subsystemhs::convertToCelsius;
+    EXPECT_EQ(func(0x00), 0x00);
+    EXPECT_EQ(func(0x7E), 0x7E);
+    EXPECT_EQ(func(0x48), 0x48);
+    EXPECT_EQ(func(0xC5), -59);
+    EXPECT_EQ(func(0xFF), -1);
+    EXPECT_EQ(func(0xD8), -40);
+    EXPECT_THROW(func(0x7F), std::invalid_argument);
+    EXPECT_THROW(func(0x80), std::invalid_argument);
+    EXPECT_THROW(func(0x81), std::invalid_argument);
+    EXPECT_THROW(func(0xC4), std::invalid_argument);
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
