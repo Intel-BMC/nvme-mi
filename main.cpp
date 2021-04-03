@@ -23,94 +23,99 @@
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
-static constexpr const char* serviceName = "xyz.openbmc_project.nvme_mi";
-static const std::chrono::seconds subsystemHsPollInterval(1);
-
-void doPoll(
-    boost::asio::yield_context yield,
-    std::unordered_map<mctpw::eid_t, std::shared_ptr<nvmemi::Drive>>& drives,
-    std::shared_ptr<boost::asio::steady_timer> timer)
+class Application
 {
-    // TODO. Add a mechanism to trigger the poll when new drive is added and
-    // stop the same when there is no drive connected
-    // TODO. Convert while loop to tail recursion
-    while (true)
-    {
-        boost::system::error_code ec;
-        timer->expires_after(subsystemHsPollInterval);
-        timer->async_wait(yield[ec]);
-        if (ec == boost::asio::error::operation_aborted)
-        {
-            phosphor::logging::log<phosphor::logging::level::ERR>(
-                "Poll timer aborted");
-            break;
-        }
-        else if (ec)
-        {
-            phosphor::logging::log<phosphor::logging::level::ERR>(
-                "Sensor poll timer failed");
-            break;
-        }
+    using DriveMap =
+        std::unordered_map<mctpw::eid_t, std::shared_ptr<nvmemi::Drive>>;
 
-        for (auto& [eid, drive] : drives)
-        {
-            drive->pollSubsystemHealthStatus(yield);
-        }
+  public:
+    Application() :
+        ioContext(std::make_shared<boost::asio::io_context>()),
+        signals(*ioContext, SIGINT, SIGTERM),
+        pollTimer(std::make_shared<boost::asio::steady_timer>(*ioContext))
+    {
     }
-}
-
-int main()
-{
-    auto ioContext = std::make_shared<boost::asio::io_context>();
-
-    boost::asio::signal_set signals(*ioContext, SIGINT, SIGTERM);
-    signals.async_wait([ioContext](const boost::system::error_code&,
-                                   const int&) { ioContext->stop(); });
-
-    std::shared_ptr<sdbusplus::asio::connection> dbusConnection{};
-    std::shared_ptr<sdbusplus::asio::object_server> objectServer{};
-    try
+    void init()
     {
+        signals.async_wait([this](const boost::system::error_code&,
+                                  const int&) { this->ioContext->stop(); });
+
         dbusConnection =
             std::make_shared<sdbusplus::asio::connection>(*ioContext);
         objectServer =
             std::make_shared<sdbusplus::asio::object_server>(dbusConnection);
         dbusConnection->request_name(serviceName);
+
+        boost::asio::spawn([this](boost::asio::yield_context yield) {
+            constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
+            mctpw::MCTPConfiguration config(mctpw::MessageType::nvmeMgmtMsg,
+                                            bindingType);
+            auto wrapper = std::make_shared<mctpw::MCTPWrapper>(
+                this->dbusConnection, config);
+            wrapper->detectMctpEndpoints(yield);
+            for (auto& [eid, service] : wrapper->getEndpointMap())
+            {
+                std::string driveName =
+                    "NVMeDrive" + std::to_string(this->driveCounter++);
+                auto drive = std::make_shared<nvmemi::Drive>(
+                    driveName, eid, *this->objectServer, wrapper);
+                this->drives.emplace(eid, drive);
+            }
+
+            doPoll(yield, this);
+        });
     }
-    catch (const std::exception& e)
+    static void doPoll(boost::asio::yield_context yield, Application* app)
     {
-        phosphor::logging::log<phosphor::logging::level::ERR>(
-            "Initialization error",
-            phosphor::logging::entry("MSG=%s", e.what()));
-        return -1;
+        // TODO. Add a mechanism to trigger the poll when new drive is added and
+        // stop the same when there is no drive connected
+        // TODO. Convert while loop to tail recursion
+        while (true)
+        {
+            boost::system::error_code ec;
+            app->pollTimer->expires_after(subsystemHsPollInterval);
+            app->pollTimer->async_wait(yield[ec]);
+            if (ec == boost::asio::error::operation_aborted)
+            {
+                phosphor::logging::log<phosphor::logging::level::ERR>(
+                    "Poll timer aborted");
+                return;
+            }
+            else if (ec)
+            {
+                phosphor::logging::log<phosphor::logging::level::ERR>(
+                    "Sensor poll timer failed");
+                return;
+            }
+
+            for (auto& [eid, drive] : app->drives)
+            {
+                drive->pollSubsystemHealthStatus(yield);
+            }
+        }
+    }
+    void run()
+    {
+        this->ioContext->run();
     }
 
+  private:
+    std::shared_ptr<boost::asio::io_context> ioContext;
+    boost::asio::signal_set signals;
+    std::shared_ptr<sdbusplus::asio::connection> dbusConnection{};
+    std::shared_ptr<sdbusplus::asio::object_server> objectServer{};
     std::vector<std::shared_ptr<mctpw::MCTPWrapper>> mctpWrappers{};
-    std::unordered_map<mctpw::eid_t, std::shared_ptr<nvmemi::Drive>> drives{};
+    DriveMap drives{};
     size_t driveCounter = 1;
-    auto timer = std::make_shared<boost::asio::steady_timer>(*ioContext);
+    std::shared_ptr<boost::asio::steady_timer> pollTimer;
+    static constexpr const char* serviceName = "xyz.openbmc_project.nvme_mi";
+    static const inline std::chrono::seconds subsystemHsPollInterval{1};
+};
 
-    boost::asio::spawn([dbusConnection, objectServer, &mctpWrappers,
-                        &driveCounter, timer,
-                        &drives](boost::asio::yield_context yield) {
-        constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
-        mctpw::MCTPConfiguration config(mctpw::MessageType::nvmeMgmtMsg,
-                                        bindingType);
-        auto wrapper =
-            std::make_shared<mctpw::MCTPWrapper>(dbusConnection, config);
-        wrapper->detectMctpEndpoints(yield);
-        for (auto& [eid, service] : wrapper->getEndpointMap())
-        {
-            std::string driveName =
-                "NVMeDrive" + std::to_string(driveCounter++);
-            auto drive = std::make_shared<nvmemi::Drive>(
-                driveName, eid, *objectServer, wrapper);
-            drives.emplace(eid, drive);
-        }
-
-        doPoll(yield, boost::ref(drives), timer);
-    });
-
-    ioContext->run();
+int main()
+{
+    Application app;
+    app.init();
+    app.run();
     return 0;
 }
