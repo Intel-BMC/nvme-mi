@@ -23,6 +23,20 @@
 #include <sdbusplus/asio/connection.hpp>
 #include <sdbusplus/asio/object_server.hpp>
 
+class Application;
+
+struct DeviceUpdateHandler
+{
+    DeviceUpdateHandler(Application& appn, mctpw::BindingType binding) :
+        app(appn), bindingType(binding)
+    {
+    }
+    void operator()(void*, const mctpw::Event& evt,
+                    boost::asio::yield_context&);
+    Application& app;
+    mctpw::BindingType bindingType;
+};
+
 class Application
 {
     using DriveMap =
@@ -51,7 +65,9 @@ class Application
             mctpw::MCTPConfiguration config(mctpw::MessageType::nvmeMgmtMsg,
                                             bindingType);
             auto wrapper = std::make_shared<mctpw::MCTPWrapper>(
-                this->dbusConnection, config);
+                this->dbusConnection, config,
+                DeviceUpdateHandler(*this, bindingType));
+            mctpWrappers.emplace(bindingType, wrapper);
             wrapper->detectMctpEndpoints(yield);
             for (auto& [eid, service] : wrapper->getEndpointMap())
             {
@@ -104,13 +120,52 @@ class Application
     boost::asio::signal_set signals;
     std::shared_ptr<sdbusplus::asio::connection> dbusConnection{};
     std::shared_ptr<sdbusplus::asio::object_server> objectServer{};
-    std::vector<std::shared_ptr<mctpw::MCTPWrapper>> mctpWrappers{};
+    std::unordered_map<mctpw::BindingType, std::shared_ptr<mctpw::MCTPWrapper>>
+        mctpWrappers{};
     DriveMap drives{};
     size_t driveCounter = 1;
     std::shared_ptr<boost::asio::steady_timer> pollTimer;
     static constexpr const char* serviceName = "xyz.openbmc_project.nvme_mi";
     static const inline std::chrono::seconds subsystemHsPollInterval{1};
+    friend struct DeviceUpdateHandler;
 };
+
+void DeviceUpdateHandler::operator()(void*, const mctpw::Event& evt,
+                                     boost::asio::yield_context&)
+{
+    switch (evt.type)
+    {
+        case mctpw::Event::EventType::deviceAdded: {
+            std::string driveName =
+                "NVMeDrive" + std::to_string(app.driveCounter++);
+            auto drive = std::make_shared<nvmemi::Drive>(
+                driveName, evt.eid, *app.objectServer,
+                app.mctpWrappers.at(bindingType));
+            app.drives.emplace(evt.eid, drive);
+            phosphor::logging::log<phosphor::logging::level::INFO>(
+                "New drive inserted",
+                phosphor::logging::entry("EID=%d", evt.eid));
+        }
+        break;
+        case mctpw::Event::EventType::deviceRemoved: {
+            if (app.drives.erase(evt.eid) == 1)
+            {
+                phosphor::logging::log<phosphor::logging::level::INFO>(
+                    "Drive removed",
+                    phosphor::logging::entry("EID=%d", evt.eid));
+            }
+            else
+            {
+                phosphor::logging::log<phosphor::logging::level::ERR>(
+                    "No drive found mapped to eid",
+                    phosphor::logging::entry("EID=%d", evt.eid));
+            }
+        }
+        break;
+        default:
+            break;
+    }
+}
 
 int main()
 {
