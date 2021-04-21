@@ -105,10 +105,44 @@ void Drive::pollSubsystemHealthStatus(boost::asio::yield_context yield)
         auto temperature =
             nvmemi::protocol::subsystemhs::convertToCelsius(respPtr->cTemp);
         this->subsystemTemp.updateValue(temperature);
+        this->logCWarnState(respPtr->ccs.criticalWarning);
     }
     catch (const std::exception& e)
     {
         phosphor::logging::log<phosphor::logging::level::WARNING>(
             (std::string("NVM Poll error. ") + e.what()).c_str());
+    }
+}
+
+void Drive::logCWarnState(bool cwarn)
+{
+    if (this->cwarnState == cwarn)
+    {
+        return;
+    }
+    this->cwarnState = cwarn;
+    static const char* messageIdWarning = "OpenBMC.0.1.StateSensorWarning";
+    static const char* messageIdNormal = "OpenBMC.0.1.StateSensorNormal";
+    std::string message;
+    if (this->cwarnState)
+    {
+        message = "Controller health status warning asserted in " + this->name;
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            message.c_str(),
+            phosphor::logging::entry("REDFISH_MESSAGE_ID=%s", messageIdWarning),
+            phosphor::logging::entry("REDFISH_MESSAGE_ARGS=%s,%s,%s,%s",
+                                     "NVM Subsystem", this->name.c_str(),
+                                     "False", "True"));
+    }
+    else
+    {
+        message =
+            "Controller health status warning de-asserted in " + this->name;
+        phosphor::logging::log<phosphor::logging::level::INFO>(
+            message.c_str(),
+            phosphor::logging::entry("REDFISH_MESSAGE_ID=%s", messageIdNormal),
+            phosphor::logging::entry("REDFISH_MESSAGE_ARGS=%s,%s,%s,%s",
+                                     "NVM Subsystem", this->name.c_str(),
+                                     "True", "False"));
     }
 }

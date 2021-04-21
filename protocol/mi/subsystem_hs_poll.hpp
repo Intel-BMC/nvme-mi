@@ -43,7 +43,24 @@ struct ResponseData
     uint8_t smartWarnings;
     uint8_t cTemp;
     uint8_t driveLifeUsed;
-    uint16_t ccs;
+    struct CompositeControllerStatus
+    {
+        bool ready : 1;
+        bool controllerFatalStatus : 1;
+        bool shutdownStatus : 1;
+        bool reserved1 : 1;
+        bool resetOccured : 1;
+        bool controllerEnableChanged : 1;
+        bool namespaceAttributeChanged : 1;
+        bool firmwareActivated : 1;
+        bool controllerStatusChange : 1;
+        bool compositeTemperatureChange : 1;
+        bool percentageUsed : 1;
+        bool availableSpare : 1;
+        bool criticalWarning : 1;
+        uint8_t reserved2 : 3;
+    } __attribute__((packed));
+    CompositeControllerStatus ccs;
     uint16_t reserved;
 } __attribute__((packed));
 

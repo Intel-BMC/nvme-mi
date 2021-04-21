@@ -56,5 +56,8 @@ class Drive
     NumericSensor subsystemTemp;
     mctpw::eid_t mctpEid{};
     static constexpr std::chrono::milliseconds hsPollTimeout{100};
+    bool cwarnState = false;
+
+    void logCWarnState(bool cwarn);
 };
 } // namespace nvmemi
