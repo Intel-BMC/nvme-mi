@@ -73,7 +73,18 @@ Drive::Drive(const std::string& driveName, mctpw::eid_t eid,
 
     if (!this->driveLogInterface->register_method(
             "CollectLog", [this](boost::asio::yield_context yield) {
-                return this->collectDriveLog(yield);
+                pausePollRequested = true;
+                std::tuple<int, std::string> status;
+                try
+                {
+                    status = this->collectDriveLog(yield);
+                }
+                catch (std::exception& e)
+                {
+                    status = std::make_tuple(-1, std::string(e.what()));
+                }
+                pausePollRequested = false;
+                return status;
             }))
     {
         throw std::runtime_error("Register method failed: CollectLog");
@@ -96,6 +107,10 @@ static std::string getHexString(It begin, It end)
 
 void Drive::pollSubsystemHealthStatus(boost::asio::yield_context yield)
 {
+    if (pausePollRequested)
+    {
+        return;
+    }
     using Message = nvmemi::protocol::ManagementInterfaceMessage<uint8_t*>;
     using DWord1 = nvmemi::protocol::subsystemhs::RequestDWord1;
     using Response = nvmemi::protocol::subsystemhs::ResponseData;

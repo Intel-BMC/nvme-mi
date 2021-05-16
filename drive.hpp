@@ -61,6 +61,7 @@ class Drive
     static constexpr std::chrono::milliseconds hsPollTimeout{100};
     bool cwarnState = false;
     std::unique_ptr<sdbusplus::asio::dbus_interface> driveLogInterface{};
+    bool pausePollRequested = false;
 
     void logCWarnState(bool cwarn);
 };
