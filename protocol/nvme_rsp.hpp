@@ -23,6 +23,11 @@
 namespace nvmemi::protocol
 {
 
+enum class Status : uint8_t
+{
+    success = 0,
+};
+
 template <typename T>
 class NVMeResponse;
 

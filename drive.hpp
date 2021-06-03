@@ -64,5 +64,6 @@ class Drive
     bool pausePollRequested = false;
 
     void logCWarnState(bool cwarn);
+    static bool validateResponse(const std::vector<uint8_t>& response);
 };
 } // namespace nvmemi

@@ -134,6 +134,11 @@ void Drive::pollSubsystemHealthStatus(boost::asio::yield_context yield)
             phosphor::logging::entry("MSG=%s", ec.message().c_str()));
         return;
     }
+
+    if (!validateResponse(response))
+    {
+        return;
+    }
     phosphor::logging::log<phosphor::logging::level::DEBUG>(
         getHexString(response.begin(), response.end()).c_str());
 
@@ -1353,4 +1358,18 @@ std::tuple<int, std::string>
     jsonDump << jsonObject.dump(2, ' ', true,
                                 nlohmann::json::error_handler_t::replace);
     return std::make_tuple(ErrorStatus::success, fileName);
+}
+
+bool Drive::validateResponse(const std::vector<uint8_t>& response)
+{
+    nvmemi::protocol::NVMeResponse respMsg(response);
+    if (respMsg.getStatus() !=
+        static_cast<uint8_t>(nvmemi::protocol::Status::success))
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "NVMe Response error",
+            phosphor::logging::entry("STATUSCODE=%d", respMsg.getStatus()));
+        return false;
+    }
+    return true;
 }
