@@ -109,7 +109,5 @@ ManagementInterfaceResponse(const T&)
     -> ManagementInterfaceResponse<const uint8_t*>;
 template <typename T>
 ManagementInterfaceResponse(T&) -> ManagementInterfaceResponse<uint8_t*>;
-template <typename T>
-ManagementInterfaceResponse(T&) -> ManagementInterfaceResponse<uint8_t*>;
 
 } // namespace nvmemi::protocol
