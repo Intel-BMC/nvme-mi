@@ -82,6 +82,10 @@ if not mctpwrapper_dep.found()
      mctpwrapper_dep = mctpwrapper_proj.get_variable('wrapperlib_dep')
 endif
 
+# TODO. Fix service crashes on using dependency() method
+sdbusplus = cpp.find_library('sdbusplus')
+systemd = cpp.find_library('systemd')
+
 deps = [
     boost,
     systemd,

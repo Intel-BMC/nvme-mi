@@ -60,26 +60,27 @@ class Application
             std::make_shared<sdbusplus::asio::object_server>(dbusConnection);
         dbusConnection->request_name(serviceName);
 
-        boost::asio::spawn([this](boost::asio::yield_context yield) {
-            constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
-            mctpw::MCTPConfiguration config(mctpw::MessageType::nvmeMgmtMsg,
-                                            bindingType);
-            auto wrapper = std::make_shared<mctpw::MCTPWrapper>(
-                this->dbusConnection, config,
-                DeviceUpdateHandler(*this, bindingType));
-            mctpWrappers.emplace(bindingType, wrapper);
-            wrapper->detectMctpEndpoints(yield);
-            for (auto& [eid, service] : wrapper->getEndpointMap())
-            {
-                std::string driveName =
-                    "NVMeDrive" + std::to_string(this->driveCounter++);
-                auto drive = std::make_shared<nvmemi::Drive>(
-                    driveName, eid, *this->objectServer, wrapper);
-                this->drives.emplace(eid, drive);
-            }
+        boost::asio::spawn(
+            *ioContext, [this](boost::asio::yield_context yield) {
+                constexpr auto bindingType = mctpw::BindingType::mctpOverSmBus;
+                mctpw::MCTPConfiguration config(mctpw::MessageType::nvmeMgmtMsg,
+                                                bindingType);
+                auto wrapper = std::make_shared<mctpw::MCTPWrapper>(
+                    this->dbusConnection, config,
+                    DeviceUpdateHandler(*this, bindingType));
+                mctpWrappers.emplace(bindingType, wrapper);
+                wrapper->detectMctpEndpoints(yield);
+                for (auto& [eid, service] : wrapper->getEndpointMap())
+                {
+                    std::string driveName =
+                        "NVMeDrive" + std::to_string(this->driveCounter++);
+                    auto drive = std::make_shared<nvmemi::Drive>(
+                        driveName, eid, *this->objectServer, wrapper);
+                    this->drives.emplace(eid, drive);
+                }
 
-            doPoll(yield, this);
-        });
+                doPoll(yield, this);
+            });
     }
     static void doPoll(boost::asio::yield_context yield, Application* app)
     {
