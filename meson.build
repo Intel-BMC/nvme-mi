@@ -35,6 +35,8 @@ if not sdbusplus.found()
     sdbusplus_proj = subproject('sdbusplus', required: true)
     sdbusplus = sdbusplus_proj.get_variable('sdbusplus_dep')
 endif
+sdbusplus_dep = sdbusplus.partial_dependency(link_args: true,
+     includes : true, links: true)
 
 cpp = meson.get_compiler('cpp')
 if cpp.has_header('phosphor-logging/log.hpp')
@@ -82,14 +84,9 @@ if not mctpwrapper_dep.found()
      mctpwrapper_dep = mctpwrapper_proj.get_variable('wrapperlib_dep')
 endif
 
-# TODO. Fix service crashes on using dependency() method
-sdbusplus = cpp.find_library('sdbusplus')
-systemd = cpp.find_library('systemd')
-
 deps = [
     boost,
-    systemd,
-    sdbusplus,
+    sdbusplus_dep,
     phosphorlog_dep,
     threads,
     mctpwrapper_dep,
