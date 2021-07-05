@@ -32,7 +32,7 @@ struct DeviceUpdateHandler
     {
     }
     void operator()(void*, const mctpw::Event& evt,
-                    boost::asio::yield_context&);
+                    boost::asio::yield_context& yield);
     Application& app;
     mctpw::BindingType bindingType;
 };
@@ -78,15 +78,14 @@ class Application
                         driveName, eid, *this->objectServer, wrapper);
                     this->drives.emplace(eid, drive);
                 }
-
-                doPoll(yield, this);
+                if (!this->drives.empty())
+                {
+                    doPoll(yield, this);
+                }
             });
     }
     static void doPoll(boost::asio::yield_context yield, Application* app)
     {
-        // TODO. Add a mechanism to trigger the poll when new drive is added and
-        // stop the same when there is no drive connected
-        // TODO. Convert while loop to tail recursion
         while (true)
         {
             boost::system::error_code ec;
@@ -133,7 +132,7 @@ class Application
 };
 
 void DeviceUpdateHandler::operator()(void*, const mctpw::Event& evt,
-                                     boost::asio::yield_context&)
+                                     boost::asio::yield_context& yield)
 {
     switch (evt.type)
     {
@@ -147,6 +146,12 @@ void DeviceUpdateHandler::operator()(void*, const mctpw::Event& evt,
             phosphor::logging::log<phosphor::logging::level::INFO>(
                 "New drive inserted",
                 phosphor::logging::entry("EID=%d", evt.eid));
+            if (app.drives.size() == 1)
+            {
+                boost::asio::spawn([this](boost::asio::yield_context yield) {
+                    Application::doPoll(yield, &app);
+                });
+            }
         }
         break;
         case mctpw::Event::EventType::deviceRemoved: {
@@ -161,6 +166,11 @@ void DeviceUpdateHandler::operator()(void*, const mctpw::Event& evt,
                 phosphor::logging::log<phosphor::logging::level::ERR>(
                     "No drive found mapped to eid",
                     phosphor::logging::entry("EID=%d", evt.eid));
+            }
+            // Timer cancellation if all drives are removed
+            if (app.drives.empty())
+            {
+                app.pollTimer->cancel();
             }
         }
         break;
