@@ -105,7 +105,8 @@ class Application
                 return;
             }
 
-            for (auto& [eid, drive] : app->drives)
+            DriveMap copyDrives(app->drives);
+            for (auto& [eid, drive] : copyDrives)
             {
                 drive->pollSubsystemHealthStatus(yield);
             }
