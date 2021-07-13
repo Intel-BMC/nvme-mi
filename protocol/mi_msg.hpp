@@ -89,8 +89,9 @@ class ManagementInterfaceMessage<const uint8_t*>
 
 template <>
 class ManagementInterfaceMessage<uint8_t*>
-    : public ManagementInterfaceMessage<const uint8_t*>,
-      public NVMeMessage<uint8_t*>
+    : public NVMeMessage<uint8_t*>,
+      public ManagementInterfaceMessage<const uint8_t*>
+
 {
   public:
     ManagementInterfaceMessage(uint8_t* data, size_t len) :

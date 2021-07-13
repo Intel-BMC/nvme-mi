@@ -61,7 +61,7 @@ class NVMeMessage<const uint8_t*>
     using CRC32C = uint32_t;
     static constexpr size_t minSize = sizeof(CommonHeader);
     NVMeMessage(const uint8_t* data, size_t len) :
-        buffer(reinterpret_cast<const CommonHeader*>(data)), size(len)
+        size(len), buffer(reinterpret_cast<const CommonHeader*>(data))
     {
         if (nullptr == data)
         {
@@ -114,8 +114,8 @@ class NVMeMessage<uint8_t*> : public virtual NVMeMessage<const uint8_t*>
 {
   public:
     NVMeMessage(uint8_t* data, size_t len) :
-        NVMeMessage<const uint8_t*>(data, len),
-        buffer(reinterpret_cast<CommonHeader*>(data)), base(data)
+        NVMeMessage<const uint8_t*>(data, len), base(data),
+        buffer(reinterpret_cast<CommonHeader*>(data))
     {
     }
     template <typename T>

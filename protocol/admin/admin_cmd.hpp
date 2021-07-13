@@ -120,8 +120,8 @@ class AdminCommand<const uint8_t*> : public virtual NVMeMessage<const uint8_t*>
 };
 
 template <>
-class AdminCommand<uint8_t*> : public AdminCommand<const uint8_t*>,
-                               public NVMeMessage<uint8_t*>
+class AdminCommand<uint8_t*> : public NVMeMessage<uint8_t*>,
+                               public AdminCommand<const uint8_t*>
 {
   public:
     AdminCommand(uint8_t* data, size_t len) :

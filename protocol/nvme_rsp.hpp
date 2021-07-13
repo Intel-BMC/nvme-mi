@@ -41,10 +41,9 @@ class NVMeResponse<const uint8_t*> : public virtual NVMeMessage<const uint8_t*>
         NVMeMessage<const uint8_t*>::minSize + sizeof(StatusCode);
 
     NVMeResponse(const uint8_t* data, size_t len) :
-        NVMeMessage<const uint8_t*>(data, len),
+        NVMeMessage<const uint8_t*>(data, len), base(data),
         status(reinterpret_cast<const uint8_t*>(
-            data + NVMeMessage<const uint8_t*>::minSize)),
-        base(data)
+            data + NVMeMessage<const uint8_t*>::minSize))
     {
         if (len < (minSize + sizeof(CRC32C)))
         {

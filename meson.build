@@ -96,9 +96,9 @@ deps = [
 src_files = ['main.cpp', 'drive.cpp', 'numeric_sensor.cpp',
              'threshold_helper.cpp', 'protocol/linux/crc32c.cpp']
 
-exe_options = ['warning_level=0', 'werror=false']
+exe_options = ['warning_level=3', 'werror=true']
 if yocto_build.enabled()
-    exe_options = ['warning_level=0', 'werror=true']
+    exe_options = ['warning_level=3', 'werror=true']
 endif
 
 executable(

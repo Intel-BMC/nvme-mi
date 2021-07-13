@@ -60,9 +60,10 @@ Drive::Drive(const std::string& driveName, mctpw::eid_t eid,
              sdbusplus::asio::object_server& objServer,
              std::shared_ptr<mctpw::MCTPWrapper> wrapper) :
     name(std::regex_replace(driveName, std::regex("[^a-zA-Z0-9_/]+"), "_")),
+    mctpWrapper(wrapper),
     subsystemTemp(objServer, driveName + "_Temp", getDefaultThresholds(),
                   nvmeTemperatureMin, nvmeTemperatureMax),
-    mctpEid(eid), mctpWrapper(wrapper)
+    mctpEid(eid)
 {
     std::string objectName = nvmemi::constants::openBmcDBusPrefix + driveName;
     std::string interfaceName =
@@ -254,7 +255,7 @@ static nvmemi::protocol::readnvmeds::SubsystemInfo
     auto [data, len] = getNVMeDatastructOptionalData(
         wrapper, eid, yield, DataStructureType::nvmSubsystemInfo, 0, 0);
     using SubsystemInfo = nvmemi::protocol::readnvmeds::SubsystemInfo;
-    if (len < sizeof(SubsystemInfo))
+    if (len < static_cast<ssize_t>(sizeof(SubsystemInfo)))
     {
         throw std::runtime_error("Expected more bytes for subsystem info");
     }
@@ -278,7 +279,7 @@ std::vector<uint16_t> getControllerList(mctpw::MCTPWrapper& wrapper,
     auto [data, len] = getNVMeDatastructOptionalData(
         wrapper, eid, yield, DataStructureType::controllerList, 0, 0);
     std::vector<uint16_t> controllerList;
-    size_t i = 0;
+    int i = 0;
     if (len % 2 == 1)
     {
         throw std::invalid_argument("Expected even number of bytes");
@@ -325,7 +326,7 @@ std::vector<std::pair<nvmemi::protocol::NVMeMessageTye, uint8_t>>
     auto [data, len] = getNVMeDatastructOptionalData(
         wrapper, eid, yield, DataStructureType::optionalCommands, 0, 0);
     // Optional commands starts from index 2.
-    for (size_t idx = 2; (idx + 1) < len; idx = idx + sizeof(uint16_t))
+    for (int idx = 2; (idx + 1) < len; idx = idx + sizeof(uint16_t))
     {
         optionalCommands.emplace_back(
             static_cast<nvmemi::protocol::NVMeMessageTye>(
@@ -346,8 +347,6 @@ std::optional<nlohmann::json>
     msg.setMiOpCode(nvmemi::protocol::MiOpCode::controllerHealthStatusPoll);
     auto dword0 = reinterpret_cast<nvmemi::protocol::controllerhspoll::DWord0*>(
         msg.getDWord0());
-    auto dword1 = reinterpret_cast<nvmemi::protocol::controllerhspoll::DWord1*>(
-        msg.getDWord1());
     dword0->maxEntries = 0xFE;
     // TODO. This will fetch status of maximum 255 controllers. Add support to
     // get HS poll response if number of controllers is greater than that
