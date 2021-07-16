@@ -22,12 +22,8 @@ endif
 boost = dependency('boost', required: dep_required, version : '>=1.71',
         modules: [ 'coroutine', 'context'])
 if not boost.found()
-     subproject('boost_1_71_0', required: true)
-     boost = declare_dependency(
-         include_directories: 'subprojects/boost_1_71_0/install/include',
-          link_args:['-Lsubprojects/boost_1_71_0/install/lib',
-         '-lboost_context', '-lboost_coroutine']
-     )
+     boost_proj = subproject('boost_1_71_0', required: true)
+     boost = boost_proj.get_variable('boost_dep')
 endif
 
 sdbusplus = dependency('sdbusplus', required: dep_required)
