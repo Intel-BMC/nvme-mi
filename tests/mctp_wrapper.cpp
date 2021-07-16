@@ -130,7 +130,25 @@ std::pair<boost::system::error_code, ByteArray>
                                   eid_t dstEId, const ByteArray& request,
                                   std::chrono::milliseconds timeout)
 {
-    return std::pair<boost::system::error_code, ByteArray>();
+    switch (gTestInfo.testId)
+    {
+        case TestID::createDrive: {
+            std::vector<uint8_t> expected = {
+                0x84, 0x08, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xD2, 0xD4, 0x77, 0x36};
+            gTestInfo.status =
+                std::equal(request.begin(), request.end(), expected.begin());
+            ByteArray response = {132, 136, 0,  0, 0, 0, 0,   0,  56, 255,
+                                  59,  0,   33, 1, 0, 0, 194, 38, 58, 37};
+            return std::make_pair(boost::system::error_code(), response);
+        }
+        break;
+        default:
+            throw std::runtime_error("Unknown test case");
+    }
+    return std::make_pair(
+        boost::system::errc::make_error_code(boost::system::errc::timed_out),
+        ByteArray());
 }
 
 void MCTPWrapper::sendAsync(const SendCallback& callback, const eid_t dstEId,
