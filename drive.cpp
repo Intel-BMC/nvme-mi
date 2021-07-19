@@ -90,6 +90,11 @@ Drive::Drive(const std::string& driveName, mctpw::eid_t eid,
     {
         throw std::runtime_error("Register method failed: CollectLog");
     }
+    if (!this->driveLogInterface->register_property("EID", eid))
+    {
+        phosphor::logging::log<phosphor::logging::level::ERR>(
+            "Error registering EID property");
+    }
     driveLogInterface->initialize();
 }
 
