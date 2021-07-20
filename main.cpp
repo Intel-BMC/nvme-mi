@@ -131,8 +131,9 @@ class Application
     friend struct DeviceUpdateHandler;
 };
 
-void DeviceUpdateHandler::operator()(void*, const mctpw::Event& evt,
-                                     boost::asio::yield_context& yield)
+void DeviceUpdateHandler::operator()(
+    void*, const mctpw::Event& evt,
+    [[maybe_unused]] boost::asio::yield_context& wrapperContext)
 {
     switch (evt.type)
     {
