@@ -359,54 +359,77 @@ std::optional<nlohmann::json>
                                 boost::asio::yield_context yield)
 {
     using Request = nvmemi::protocol::ManagementInterfaceMessage<uint8_t*>;
-    std::vector<uint8_t> requestBuffer(
-        Request::minSize + sizeof(Request::CRC32C), 0x00);
-    Request msg(requestBuffer);
-    msg.setMiOpCode(nvmemi::protocol::MiOpCode::controllerHealthStatusPoll);
-    auto dword0 = reinterpret_cast<nvmemi::protocol::controllerhspoll::DWord0*>(
-        msg.getDWord0());
-    dword0->maxEntries = 0xFE;
-    // TODO. This will fetch status of maximum 255 controllers. Add support to
-    // get HS poll response if number of controllers is greater than that
-    dword0->startId = 0;
-    dword0->reportAll = true;
-    msg.setCRC();
-
-    phosphor::logging::log<phosphor::logging::level::DEBUG>(
-        ("GetControllerHSPollResponse request " +
-         getHexString(requestBuffer.begin(), requestBuffer.end()))
-            .c_str());
-
-    auto [ec, response] =
-        wrapper.sendReceiveYield(yield, eid, requestBuffer, normalRespTimeout);
-    if (ec)
+    uint8_t respEntries = 0;
+    uint8_t totalRespEntries = 0;
+    constexpr uint8_t maximumEntries = 0xFE;
+    uint8_t nextStartId = 0;
+    constexpr uint8_t maxLoopCount = 32;
+    uint8_t responseCount = 0;
+    std::string hexString;
+    do
     {
-        phosphor::logging::log<phosphor::logging::level::ERR>(
-            ("GetControllerHSPollResponse: " + ec.message()).c_str());
-        return std::nullopt;
-    }
-    phosphor::logging::log<phosphor::logging::level::DEBUG>(
-        ("GetControllerHSPollResponse response " +
-         getHexString(response.begin(), response.end()))
-            .c_str());
+        if (++responseCount >= maxLoopCount)
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "GetControllerHSPollResponse: exceed limit");
+            return std::nullopt;
+        }
 
-    nvmemi::protocol::ManagementInterfaceResponse miRsp(response);
-    auto nvmeMiResponse = miRsp.getNVMeManagementResponse();
-    uint8_t respEntries = nvmeMiResponse.first[2];
+        std::vector<uint8_t> requestBuffer(
+            Request::minSize + sizeof(Request::CRC32C), 0x00);
+        Request msg(requestBuffer);
+        msg.setMiOpCode(nvmemi::protocol::MiOpCode::controllerHealthStatusPoll);
+        auto dword0 =
+            reinterpret_cast<nvmemi::protocol::controllerhspoll::DWord0*>(
+                msg.getDWord0());
+
+        dword0->maxEntries = maximumEntries;
+        dword0->startId = nextStartId;
+        dword0->reportAll = true;
+        msg.setCRC();
+
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("GetControllerHSPollResponse request " +
+             getHexString(requestBuffer.begin(), requestBuffer.end()))
+                .c_str());
+
+        auto [ec, response] = wrapper.sendReceiveYield(
+            yield, eid, requestBuffer, normalRespTimeout);
+        if (ec)
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                ("GetControllerHSPollResponse: " + ec.message()).c_str());
+            return std::nullopt;
+        }
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("GetControllerHSPollResponse response " +
+             getHexString(response.begin(), response.end()))
+                .c_str());
+
+        nvmemi::protocol::ManagementInterfaceResponse miRsp(response);
+        auto nvmeMiResponse = miRsp.getNVMeManagementResponse();
+        respEntries = nvmeMiResponse.first[2];
+        totalRespEntries += respEntries;
+        nextStartId += respEntries;
+
+        // TODO Check status code
+        auto [data, len] = miRsp.getOptionalResponseData();
+        if (len <= 0)
+        {
+            uint8_t startId = dword0->startId;
+            phosphor::logging::log<phosphor::logging::level::WARNING>(
+                "GetControllerHSPollResponse: Optional data not found for",
+                phosphor::logging::entry("STARTID=%d", startId));
+
+            continue;
+        }
+        hexString += getHexString(data, data + len);
+        phosphor::logging::log<phosphor::logging::level::DEBUG>(
+            ("Optional data " + hexString).c_str());
+    } while (maximumEntries == respEntries);
+
     nlohmann::json jsonObject;
-    jsonObject["Entries"] = respEntries;
-
-    // TODO Check status code
-    auto [data, len] = miRsp.getOptionalResponseData();
-    if (len <= 0)
-    {
-        phosphor::logging::log<phosphor::logging::level::ERR>(
-            "GetControllerHSPollResponse: Optional data not found");
-        return std::nullopt;
-    }
-    auto hexString = getHexString(data, data + len);
-    phosphor::logging::log<phosphor::logging::level::DEBUG>(
-        ("Optional data " + hexString).c_str());
+    jsonObject["Entries"] = totalRespEntries;
     jsonObject["Data"] = hexString;
     return jsonObject;
 }
