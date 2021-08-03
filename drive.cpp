@@ -113,6 +113,10 @@ static std::string getHexString(It begin, It end)
 
 void Drive::pollSubsystemHealthStatus(boost::asio::yield_context yield)
 {
+    if (curErrorCount >= maxHealthStatusCount)
+    {
+        return;
+    }
     if (pausePollRequested)
     {
         return;
@@ -138,13 +142,22 @@ void Drive::pollSubsystemHealthStatus(boost::asio::yield_context yield)
         phosphor::logging::log<phosphor::logging::level::ERR>(
             "Poll Subsystem health status error",
             phosphor::logging::entry("MSG=%s", ec.message().c_str()));
+        ++curErrorCount;
+
+        if (curErrorCount == maxHealthStatusCount)
+        {
+            phosphor::logging::log<phosphor::logging::level::ERR>(
+                "Excluded from the polling, reached max limit",
+                phosphor::logging::entry("DRIVE=%s", this->name.c_str()));
+        }
         return;
     }
-
     if (!validateResponse(response))
     {
+        ++curErrorCount;
         return;
     }
+    curErrorCount = 0;
     phosphor::logging::log<phosphor::logging::level::DEBUG>(
         getHexString(response.begin(), response.end()).c_str());
 

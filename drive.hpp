@@ -62,7 +62,8 @@ class Drive
     bool cwarnState = false;
     std::unique_ptr<sdbusplus::asio::dbus_interface> driveLogInterface{};
     bool pausePollRequested = false;
-
+    static constexpr uint8_t maxHealthStatusCount = 10;
+    uint8_t curErrorCount = 0;
     void logCWarnState(bool cwarn);
     static bool validateResponse(const std::vector<uint8_t>& response);
 };

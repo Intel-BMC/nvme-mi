@@ -89,13 +89,13 @@ class Application
             std::string value(envPtr);
             if (value == "1")
             {
-                initializeHealtStatusPollIntf();
+                initializeHealthStatusPollIntf();
             }
         }
     }
     static void doPoll(boost::asio::yield_context yield, Application* app)
     {
-        while (true)
+        while (app->pollTimer != nullptr)
         {
             boost::system::error_code ec;
             app->pollTimer->expires_after(subsystemHsPollInterval);
@@ -145,7 +145,7 @@ class Application
         phosphor::logging::log<phosphor::logging::level::INFO>(
             "health status polling resumed");
     }
-    void initializeHealtStatusPollIntf()
+    void initializeHealthStatusPollIntf()
     {
         if (healthStatusPollInterface != nullptr)
         {
@@ -210,9 +210,7 @@ void DeviceUpdateHandler::operator()(
                 phosphor::logging::entry("EID=%d", evt.eid));
             if (app.drives.size() == 1)
             {
-                boost::asio::spawn([this](boost::asio::yield_context yield) {
-                    Application::doPoll(yield, &app);
-                });
+                app.resumeHealthStatusPolling();
             }
         }
         break;
@@ -232,7 +230,7 @@ void DeviceUpdateHandler::operator()(
             // Timer cancellation if all drives are removed
             if (app.drives.empty())
             {
-                app.pollTimer->cancel();
+                app.pauseHealthStatusPolling();
             }
         }
         break;
