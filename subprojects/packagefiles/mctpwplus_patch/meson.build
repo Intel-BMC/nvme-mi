@@ -6,10 +6,8 @@ output=run_command('pwd')
 message(output.stdout())
 boost = dependency('boost', required: false, version : '>=1.71', modules : ['coroutine', 'context'])
 if not boost.found()
-     boost = declare_dependency(
-         include_directories: '../boost_1_71_0/install/include',
-		 link_args:['-L../subprojects/boost_1_71_0/install/libs' ,'-lboost_context', '-lboost_coroutine']
-     )
+     boost_proj = subproject('boost_1_71_0', required: true)
+     boost = boost_proj.get_variable('boost_dep')
 endif
 
 sdbusplus = dependency('sdbusplus', required: false)
@@ -36,7 +34,7 @@ systemd_system_unit_dir = systemd.get_pkgconfig_variable(
 threads = dependency('threads')
 
 subdir = 'mctpwplus'
-lib_src_files = ['dbus_cb.cpp', 'mctp_wrapper.cpp', 'service_monitor.cpp']
+lib_src_files = ['dbus_cb.cpp', 'mctp_wrapper.cpp', 'mctp_impl.cpp', 'service_monitor.cpp']
 src_files = []
 foreach file : lib_src_files
   src_files += subdir + '/' + file

@@ -17,6 +17,7 @@
 #include "../drive.hpp"
 #include "test_info.hpp"
 
+#include <boost/asio.hpp>
 #include <iostream>
 #include <mctp_wrapper.hpp>
 

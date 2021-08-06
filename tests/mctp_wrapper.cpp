@@ -20,6 +20,13 @@
 
 extern TestInfo gTestInfo;
 
+namespace mctpw
+{
+class MCTPImpl
+{
+};
+} // namespace mctpw
+
 using namespace mctpw;
 
 MCTPConfiguration::MCTPConfiguration(MessageType msgType, BindingType binding) :
@@ -33,14 +40,19 @@ MCTPConfiguration::MCTPConfiguration(MessageType msgType, BindingType binding,
     type(msgType),
     bindingType(binding)
 {
+    if (MessageType::vdpci != msgType)
+    {
+        throw std::invalid_argument("MsgType expected VDPCI");
+    }
+    setVendorDefinedValues(vid, vendorMsgType, vendorMsgTypeMask);
 }
 
 MCTPWrapper::MCTPWrapper(boost::asio::io_context& ioContext,
                          const MCTPConfiguration& configIn,
                          const ReconfigurationCallback& networkChangeCb,
                          const ReceiveMessageCallback& rxCb) :
-    networkChangeCallback(networkChangeCb),
-    receiveCallback(rxCb), config(configIn), connection()
+    config(configIn),
+    pimpl()
 {
 }
 
@@ -48,57 +60,23 @@ MCTPWrapper::MCTPWrapper(std::shared_ptr<sdbusplus::asio::connection> conn,
                          const MCTPConfiguration& configIn,
                          const ReconfigurationCallback& networkChangeCb,
                          const ReceiveMessageCallback& rxCb) :
-    networkChangeCallback(networkChangeCb),
-    receiveCallback(rxCb), config(configIn), connection(conn)
+    config(configIn),
+    pimpl()
 {
 }
 
-MCTPWrapper::~MCTPWrapper() noexcept
-{
-}
+MCTPWrapper::~MCTPWrapper() noexcept = default;
 
 void MCTPWrapper::detectMctpEndpointsAsync(StatusCallback&& registerCB)
 {
-}
-
-void MCTPWrapper::registerListeners(const std::string& serviceName)
-{
+    throw std::runtime_error(
+        "Not expected to be called from test code. Use yield method");
 }
 
 boost::system::error_code
     MCTPWrapper::detectMctpEndpoints(boost::asio::yield_context yield)
 {
-    switch (gTestInfo.testId)
-    {
-        case TestID::createDrive: {
-            this->endpointMap[1] = std::make_pair(1, "TestService");
-        }
-        break;
-        default:
-            throw std::runtime_error("Unknown test case");
-    }
-    return boost::system::errc::make_error_code(boost::system::errc::success);
-}
-
-int MCTPWrapper::getBusId(const std::string& serviceName)
-{
-    return 0;
-}
-
-std::optional<std::vector<std::pair<unsigned, std::string>>>
-    MCTPWrapper::findBusByBindingType(boost::asio::yield_context yield)
-{
-    return std::nullopt;
-}
-
-/* Return format:
- * map<Eid, pair<bus, service_name_string>>
- */
-MCTPWrapper::EndpointMap MCTPWrapper::buildMatchingEndpointMap(
-    boost::asio::yield_context yield,
-    std::vector<std::pair<unsigned, std::string>>& buses)
-{
-    return EndpointMap();
+    return boost::system::error_code();
 }
 
 void MCTPWrapper::sendReceiveAsync(ReceiveCallback callback, eid_t dstEId,
@@ -176,16 +154,8 @@ std::pair<boost::system::error_code, int>
     return std::pair<boost::system::error_code, int>();
 }
 
-void MCTPWrapper::addToEidMap(boost::asio::yield_context yield,
-                              const std::string& serviceName)
+const MCTPWrapper::EndpointMap& MCTPWrapper::getEndpointMap()
 {
-}
-
-size_t MCTPWrapper::eraseDevice(eid_t eid)
-{
-    return 0;
-}
-
-void MCTPWrapper::listenForNewMctpServices()
-{
+    static MCTPWrapper::EndpointMap map;
+    return map;
 }

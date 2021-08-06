@@ -1,5 +1,5 @@
 [wrap-git]
 url = ssh://git-amr-2.devtools.intel.com:29418/openbmc-pmci
-revision = HEAD
+revision = ab61eaeadc501dead6b08c52bb95152967e28412
 patch_directory=mctpwplus_patch
 directory=mctpwplus
