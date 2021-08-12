@@ -45,8 +45,7 @@ class Application
   public:
     Application() :
         ioContext(std::make_shared<boost::asio::io_context>()),
-        signals(*ioContext, SIGINT, SIGTERM),
-        pollTimer(std::make_shared<boost::asio::steady_timer>(*ioContext))
+        signals(*ioContext, SIGINT, SIGTERM), pollTimer(nullptr)
     {
     }
     void init()
