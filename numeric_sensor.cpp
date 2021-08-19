@@ -131,7 +131,8 @@ void NumericSensor::setInitialProperties(const bool sensorDisabled)
 {
     sensorInterface->register_property("MaxValue", maxValue);
     sensorInterface->register_property("MinValue", minValue);
-    sensorInterface->register_property("Value", value);
+    sensorInterface->register_property(
+        "Value", value, sdbusplus::asio::PropertyPermission::readWrite);
     sensorInterface->initialize();
 
     availableInterface->register_property(
@@ -161,8 +162,9 @@ void NumericSensor::setInitialProperties(const bool sensorDisabled)
         }
 
         // Interface is 0th tuple member
-        if (!thresholdIntf->iface->register_property(thresholdIntf->level,
-                                                     threshold.value))
+        if (!thresholdIntf->iface->register_property(
+                thresholdIntf->level, threshold.value,
+                sdbusplus::asio::PropertyPermission::readWrite))
         {
             phosphor::logging::log<phosphor::logging::level::ERR>(
                 "Error registering threshold level property");
@@ -203,10 +205,6 @@ std::optional<NumericSensor::ThresholdInterface>
                     return ThresholdInterface{thresholdInterfaceCritical,
                                               "CriticalHigh",
                                               "CriticalAlarmHigh"};
-                case thresholds::Direction::low:
-                    return ThresholdInterface{thresholdInterfaceCritical,
-                                              "CriticalLow",
-                                              "CriticalAlarmLow"};
                 default:
                     return std::nullopt;
             }
@@ -218,9 +216,6 @@ std::optional<NumericSensor::ThresholdInterface>
                     return ThresholdInterface{thresholdInterfaceWarning,
                                               "WarningHigh",
                                               "WarningAlarmHigh"};
-                case thresholds::Direction::low:
-                    return ThresholdInterface{thresholdInterfaceWarning,
-                                              "WarningLow", "WarningAlarmLow"};
                 default:
                     return std::nullopt;
             }
