@@ -973,7 +973,7 @@ std::vector<uint32_t>
         ss << std::hex << rsp.value();
         while (!ss.eof())
         {
-            uint8_t b1, b2, b3, b4;
+            uint8_t b1 = 0, b2 = 0, b3 = 0, b4 = 0;
             ss >> b1 >> b2 >> b3 >> b4;
             uint32_t nsId = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24);
             if (nsId == 0)
