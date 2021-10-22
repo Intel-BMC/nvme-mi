@@ -120,7 +120,7 @@ if build_tests.enabled()
     test_protocol_dep = [gtest_dep]
     test_protocol = executable('test_protocol', test_protocol_src,
          dependencies:test_protocol_dep)
-    test('Protocol-formatting', test_protocol)
+    test('Protocol-formatting', test_protocol, is_parallel : false)
 
     test_createdrive_src = ['tests/test_create_drive.cpp',
         'tests/mctp_wrapper.cpp', 'drive.cpp', 'protocol/linux/crc32c.cpp',
@@ -136,6 +136,15 @@ if build_tests.enabled()
         phosphorlog_dep, threads, mctpwrapper_mock_dep, nlohmann_json]
     test_createdrive = executable('test_createdrive', test_createdrive_src,
         dependencies:test_createdrive_dep)
-    test('Create drive test', test_createdrive)
+    test('Create drive test', test_createdrive, is_parallel : false)
+
+    test_threshold_src = ['tests/test_threshold.cpp',
+        'tests/mctp_wrapper.cpp', 'drive.cpp', 'protocol/linux/crc32c.cpp',
+        'numeric_sensor.cpp', 'threshold_helper.cpp']
+    test_threshold_dep = [gtest_dep, boost, systemd, sdbusplus,
+        phosphorlog_dep, threads, mctpwrapper_mock_dep, nlohmann_json]
+    test_threshold = executable('test_threshold', test_threshold_src,
+        dependencies:test_threshold_dep)
+    test('Threshold test', test_threshold, is_parallel : false)
 
 endif

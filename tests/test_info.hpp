@@ -18,6 +18,7 @@ enum class TestID
 {
     invalid,
     createDrive,
+    highThresholdTest
 };
 
 enum class SubTestID
