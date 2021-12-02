@@ -153,7 +153,7 @@ void NumericSensor::setInitialProperties(const bool sensorDisabled)
     operationalInterface->register_property("Functional", !sensorDisabled);
     operationalInterface->initialize();
 
-    for (const auto& threshold : thresholds)
+    for (auto& threshold : thresholds)
     {
         auto thresholdIntf = selectThresholdInterface(threshold);
         if (!thresholdIntf)
@@ -164,7 +164,22 @@ void NumericSensor::setInitialProperties(const bool sensorDisabled)
         // Interface is 0th tuple member
         if (!thresholdIntf->iface->register_property(
                 thresholdIntf->level, threshold.value,
-                sdbusplus::asio::PropertyPermission::readWrite))
+                [&](const double& request, double& oldValue) {
+                    oldValue = request; // todo, just let the config do this?
+                    threshold.value = request;
+
+                    // Invalidate previously remembered value,
+                    // so new thresholds will be checked during next update,
+                    // even if sensor reading remains unchanged.
+                    value = std::numeric_limits<double>::quiet_NaN();
+
+                    // Although tempting, don't call checkThresholds() from here
+                    // directly. Let the regular sensor monitor call the same
+                    // using updateValue(), which can check conditions like
+                    // poweron, etc., before raising any event.
+                    return 1;
+                }))
+
         {
             phosphor::logging::log<phosphor::logging::level::ERR>(
                 "Error registering threshold level property");
