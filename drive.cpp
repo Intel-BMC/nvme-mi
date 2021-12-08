@@ -970,10 +970,14 @@ std::vector<uint32_t>
     std::stringstream ss;
     if (rsp)
     {
-        ss << std::hex << rsp.value();
+        // rsp will be a hex string like 0x01 0x00 0x00 0x00 0x02 0x00 0x00..
+        ss << rsp.value();
+        // Read set of 4 integers from rsp in loop and combine them to
+        // make namespace id. namespace id = 0 means end of list.
         while (!ss.eof())
         {
-            uint8_t b1 = 0, b2 = 0, b3 = 0, b4 = 0;
+            uint32_t b1 = 0, b2 = 0, b3 = 0, b4 = 0;
+            ss << std::hex;
             ss >> b1 >> b2 >> b3 >> b4;
             uint32_t nsId = b1 | (b2 << 8) | (b3 << 16) | (b4 << 24);
             if (nsId == 0)
