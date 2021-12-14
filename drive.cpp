@@ -37,7 +37,7 @@ using nvmemi::Drive;
 using nvmemi::thresholds::Threshold;
 using DataStructureType = nvmemi::protocol::readnvmeds::DataStructureType;
 
-static constexpr double nvmeTemperatureMin = -60.0;
+static constexpr double nvmeTemperatureMin = -128.0;
 static constexpr double nvmeTemperatureMax = 127.0;
 static const std::chrono::milliseconds normalRespTimeout{600};
 static const std::chrono::milliseconds longRespTimeout{3000};
