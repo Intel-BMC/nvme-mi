@@ -14,6 +14,7 @@
 // limitations under the License.
 */
 
+#include "collectlog_resp_success.hpp"
 #include "test_info.hpp"
 
 #include <mctp_wrapper.hpp>
@@ -121,12 +122,19 @@ std::pair<boost::system::error_code, ByteArray>
             return std::make_pair(boost::system::error_code(), response);
         }
         break;
-	case TestID::highThresholdTest:{
-            ByteArray response = {132, 136, 0,  0, 0, 0, 0,   0,  56, 255,
-				120, 0, 33, 1, 0, 0, 0xF3, 0xB6, 0x82, 0x1F};
+        case TestID::highThresholdTest: {
+            ByteArray response = {132, 136, 0,    0,    0,    0,   0,
+                                  0,   56,  255,  120,  0,    33,  1,
+                                  0,   0,   0xF3, 0xB6, 0x82, 0x1F};
             return std::make_pair(boost::system::error_code(), response);
         }
-	break;
+        break;
+        case TestID::collectLog: {
+            ByteArray response =
+                getDummyResponse(request.begin(), request.end());
+            return std::make_pair(boost::system::error_code(), response);
+        }
+        break;
         default:
             throw std::runtime_error("Unknown test case");
     }

@@ -18,13 +18,15 @@ enum class TestID
 {
     invalid,
     createDrive,
-    highThresholdTest
+    highThresholdTest,
+    collectLog
 };
 
 enum class SubTestID
 {
     invalid,
     pollSubsystemHS,
+    collectLogSuccess
 };
 
 struct TestInfo

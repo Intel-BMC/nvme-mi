@@ -146,5 +146,14 @@ if build_tests.enabled()
     test_threshold = executable('test_threshold', test_threshold_src,
         dependencies:test_threshold_dep)
     test('Threshold test', test_threshold, is_parallel : false)
+    
+    test_collectlog_src = ['tests/test_collectlog.cpp',
+        'tests/mctp_wrapper.cpp', 'drive.cpp', 'protocol/linux/crc32c.cpp',
+        'numeric_sensor.cpp', 'threshold_helper.cpp']
+    test_collectlog_dep = [gtest_dep, boost, systemd, sdbusplus,
+        phosphorlog_dep, threads, mctpwrapper_mock_dep, nlohmann_json]
+    test_collectlog = executable('test_collectlog', test_collectlog_src,
+        dependencies:test_collectlog_dep)
+    test('Collect log test', test_collectlog, is_parallel : false)
 
 endif
