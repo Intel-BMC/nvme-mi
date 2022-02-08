@@ -79,7 +79,7 @@ class Application
                 }
                 if (!this->drives.empty())
                 {
-                    doPoll(yield, this);
+                    resumeHealthStatusPolling();
                 }
             });
 
@@ -118,6 +118,8 @@ class Application
                 drive->pollSubsystemHealthStatus(yield);
             }
         }
+        phosphor::logging::log<phosphor::logging::level::WARNING>(
+            "Drive polling task stopped. Timer is null now");
     }
     void pauseHealthStatusPolling()
     {
