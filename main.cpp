@@ -71,10 +71,9 @@ class Application
                 wrapper->detectMctpEndpoints(yield);
                 for (auto& [eid, service] : wrapper->getEndpointMap())
                 {
-                    std::string driveName =
-                        "NVMeDrive" + std::to_string(this->driveCounter++);
                     auto drive = std::make_shared<nvmemi::Drive>(
-                        driveName, eid, *this->objectServer, wrapper);
+                        getDriveName(wrapper, eid), eid, *this->objectServer,
+                        wrapper);
                     this->drives.emplace(eid, drive);
                 }
                 if (!this->drives.empty())
@@ -91,6 +90,21 @@ class Application
                 initializeHealthStatusPollIntf();
             }
         }
+    }
+    std::string getDriveName(std::shared_ptr<mctpw::MCTPWrapper> wrapper,
+                             mctpw::eid_t eid)
+    {
+        std::optional<std::string> driveLocation =
+            wrapper->getDeviceLocation(eid);
+        if (driveLocation.has_value())
+        {
+            return "NVMe_" + driveLocation.value();
+        }
+
+        std::string driveName =
+            "NVMeDrive" + std::to_string(this->driveCounter);
+        this->driveCounter++;
+        return driveName;
     }
     static void doPoll(boost::asio::yield_context yield, Application* app)
     {
@@ -200,11 +214,10 @@ void DeviceUpdateHandler::operator()(
     switch (evt.type)
     {
         case mctpw::Event::EventType::deviceAdded: {
-            std::string driveName =
-                "NVMeDrive" + std::to_string(app.driveCounter++);
+            auto wrapper = app.mctpWrappers.at(bindingType);
             auto drive = std::make_shared<nvmemi::Drive>(
-                driveName, evt.eid, *app.objectServer,
-                app.mctpWrappers.at(bindingType));
+                app.getDriveName(wrapper, evt.eid), evt.eid, *app.objectServer,
+                wrapper);
             app.drives.emplace(evt.eid, drive);
             phosphor::logging::log<phosphor::logging::level::INFO>(
                 "New drive inserted",

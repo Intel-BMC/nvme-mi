@@ -65,7 +65,7 @@ Drive::Drive(const std::string& driveName, mctpw::eid_t eid,
                   nvmeTemperatureMin, nvmeTemperatureMax),
     mctpEid(eid)
 {
-    std::string objectName = nvmemi::constants::openBmcDBusPrefix + driveName;
+    std::string objectName = nvmemi::constants::openBmcDBusPrefix + name;
     std::string interfaceName =
         nvmemi::constants::interfacePrefix + std::string("drive_log");
 
