@@ -79,7 +79,7 @@ void parentTask()
             *gAppData->dbusConnection, "xyz.openbmc_project.nvmemi_test",
             "/xyz/openbmc_project/sensors/temperature/NVMeDrive1_Temp",
             "xyz.openbmc_project.Sensor.Value", "MinValue");
-        EXPECT_EQ(sensorMinValue, -60);
+        EXPECT_EQ(sensorMinValue, -128);
         EXPECT_EQ(gTestInfo.status, true);
         gAppData->ioContext->stop();
         write(gAppData->cToP[writeIdx], &readData, sizeof(readData));
