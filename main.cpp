@@ -152,9 +152,10 @@ class Application
         if (!pollTimer)
         {
             pollTimer = std::make_shared<boost::asio::steady_timer>(*ioContext);
-            boost::asio::spawn([this](boost::asio::yield_context yield) {
-                doPoll(yield, this);
-            });
+            boost::asio::spawn(*ioContext,
+                               [this](boost::asio::yield_context yield) {
+                                   doPoll(yield, this);
+                               });
         }
 
         phosphor::logging::log<phosphor::logging::level::INFO>(
