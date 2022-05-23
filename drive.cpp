@@ -42,6 +42,7 @@ static constexpr double nvmeTemperatureMax = 127.0;
 static const std::chrono::milliseconds normalRespTimeout{600};
 static const std::chrono::milliseconds longRespTimeout{3000};
 static constexpr uint32_t globalNamespaceId = 0xFFFFFFFF;
+static constexpr uint32_t clearedNamespaceId = 0x00000000;
 
 static std::vector<Threshold> getDefaultThresholds()
 {
@@ -1000,7 +1001,7 @@ std::optional<std::string>
         wrapper, eid, yield,
         nvmemi::protocol::identify::ControllerNamespaceStruct::
             controllerIdentify,
-        controllerInfoSize, globalNamespaceId, controllerId);
+        controllerInfoSize, clearedNamespaceId, controllerId);
 }
 
 std::optional<std::string>
